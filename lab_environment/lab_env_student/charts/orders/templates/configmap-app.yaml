@@ -1,0 +1,15 @@
+{{- /*
+App code is copied into charts/orders/files/ by deploy_app.sh from the
+canonical copies in lab_env_student/app/ before `helm upgrade --install`.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orders-app-code
+  labels:
+    app.kubernetes.io/part-of: orders
+data:
+  orders_api.py: |
+{{ .Files.Get "files/orders_api.py" | indent 4 }}
+  worker.py: |
+{{ .Files.Get "files/worker.py" | indent 4 }}

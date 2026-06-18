@@ -1,0 +1,70 @@
+# IO-108 orders chart -- values.
+# deploy_app.sh injects serviceAccount.annotations role-arn and the env.*
+# values via --set; empty defaults here are placeholders, not optional.
+
+image:
+  repository: public.ecr.aws/docker/library/python
+  tag: "3.12-slim"
+
+api:
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+worker:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+serviceAccount:
+  name: orders-api
+  annotations:
+    eks.amazonaws.com/role-arn: ""
+
+env:
+  secretArn: ""
+  dbHost: ""
+  dbName: "orders"
+  reportsBucket: ""
+
+service:
+  port: 8080
+
+# ---------------------------------------------------------------------------
+# Lab 2 connectivity add-on (+ capstone): Kubernetes NetworkPolicies enforced by
+# the VPC CNI (enableNetworkPolicy=true on the addon). deploy_app.sh sets these
+# from the terraform `scenario` output.
+#   defaultDeny=true  -> default-deny-egress applied -> pod->internet / pod->DNS
+#                        break (eks_pod_internet / eks_pod_dns go red).
+#   allow=true        -> selective-allow policy applied (DNS + intra-namespace +
+#                        HTTPS egress) -> the documented "fix" that re-greens.
+# ---------------------------------------------------------------------------
+networkPolicy:
+  defaultDeny: false
+  allow: false
+
+# ---------------------------------------------------------------------------
+# In-cluster connectivity checker (publishes eks_pod_internet / eks_pod_dns to
+# IO108/Health). Uses its own IRSA ServiceAccount (cloudwatch:PutMetricData).
+# deploy_app.sh injects roleArn / studentId / region.
+# ---------------------------------------------------------------------------
+connCheck:
+  enabled: true
+  serviceAccountName: eks-health-checker
+  roleArn: ""
+  studentId: ""
+  region: ""
+  schedule: "* * * * *"
+  metricNamespace: "IO108/Health"
+  internetUrl: "https://example.com"
+  dnsName: "kubernetes.default.svc.cluster.local"

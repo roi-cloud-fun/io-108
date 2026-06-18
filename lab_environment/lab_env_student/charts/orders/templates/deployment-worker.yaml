@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-worker
+  labels:
+    app: orders-worker
+    app.kubernetes.io/part-of: orders
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      app: orders-worker
+  template:
+    metadata:
+      labels:
+        app: orders-worker
+      annotations:
+        checksum/app-code: {{ printf "%s%s" (.Files.Get "files/orders_api.py") (.Files.Get "files/worker.py") | sha256sum }}
+    spec:
+      containers:
+        - name: orders-worker
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          # stdlib only -- no pip, starts instantly.
+          command:
+            - sh
+            - -c
+            - "python /app/worker.py"
+          volumeMounts:
+            - name: app-code
+              mountPath: /app
+          resources:
+{{ toYaml .Values.worker.resources | indent 12 }}
+      volumes:
+        - name: app-code
+          configMap:
+            name: orders-app-code

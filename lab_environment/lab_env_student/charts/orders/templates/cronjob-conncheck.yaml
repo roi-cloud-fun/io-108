@@ -1,0 +1,135 @@
+{{- /*
+IO-108 in-cluster connectivity checker (Lab 2 add-on).
+
+A CronJob that runs every minute, probes pod-level connectivity that the
+external health-checker Lambda cannot see, and publishes 1/0 custom metrics to
+IO108/Health (dimension Student=<id>):
+
+    eks_pod_internet   pod -> {{ .Values.connCheck.internetUrl }} reachable
+    eks_pod_dns        in-cluster DNS resolves {{ .Values.connCheck.dnsName }}
+
+Auth: its own IRSA ServiceAccount (cloudwatch:PutMetricData, scoped to the
+IO108/Health namespace by the role in eks_connectivity.tf). When a default-deny
+NetworkPolicy (Lab 2 / capstone) cuts egress, the metrics stop publishing and
+the tiles go red on missing data -- the intended signal.
+*/ -}}
+{{- if .Values.connCheck.enabled }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.connCheck.serviceAccountName }}
+  labels:
+    app.kubernetes.io/part-of: orders
+  annotations:
+    eks.amazonaws.com/role-arn: {{ .Values.connCheck.roleArn | quote }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: orders-conncheck-code
+  labels:
+    app.kubernetes.io/part-of: orders
+data:
+  conncheck.py: |
+    import os
+    import socket
+    import urllib.request
+
+    import boto3
+
+    NAMESPACE = os.environ["METRIC_NAMESPACE"]
+    STUDENT = os.environ["STUDENT_ID"]
+    REGION = os.environ.get("AWS_REGION") or os.environ.get("REGION")
+    INTERNET_URL = os.environ["INTERNET_URL"]
+    DNS_NAME = os.environ["DNS_NAME"]
+
+
+    def check_internet():
+        try:
+            urllib.request.urlopen(INTERNET_URL, timeout=5)
+            return 1
+        except Exception as exc:  # noqa: BLE001
+            print("internet probe failed:", exc)
+            return 0
+
+
+    def check_dns():
+        try:
+            socket.getaddrinfo(DNS_NAME, None)
+            return 1
+        except Exception as exc:  # noqa: BLE001
+            print("dns probe failed:", exc)
+            return 0
+
+
+    def main():
+        results = {
+            "eks_pod_internet": check_internet(),
+            "eks_pod_dns": check_dns(),
+        }
+        print("conncheck results:", results)
+        cw = boto3.client("cloudwatch", region_name=REGION)
+        for name, value in results.items():
+            cw.put_metric_data(
+                Namespace=NAMESPACE,
+                MetricData=[{
+                    "MetricName": name,
+                    "Dimensions": [{"Name": "Student", "Value": STUDENT}],
+                    "Value": float(value),
+                    "Unit": "None",
+                }],
+            )
+
+
+    if __name__ == "__main__":
+        main()
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: orders-conncheck
+  labels:
+    app.kubernetes.io/part-of: orders
+spec:
+  schedule: {{ .Values.connCheck.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 120
+      template:
+        metadata:
+          labels:
+            app: orders-conncheck
+            app.kubernetes.io/part-of: orders
+        spec:
+          serviceAccountName: {{ .Values.connCheck.serviceAccountName }}
+          restartPolicy: Never
+          containers:
+            - name: conncheck
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              command:
+                - sh
+                - -c
+                - "pip install --quiet boto3 && python /scripts/conncheck.py"
+              env:
+                - name: METRIC_NAMESPACE
+                  value: {{ .Values.connCheck.metricNamespace | quote }}
+                - name: STUDENT_ID
+                  value: {{ .Values.connCheck.studentId | quote }}
+                - name: REGION
+                  value: {{ .Values.connCheck.region | quote }}
+                - name: INTERNET_URL
+                  value: {{ .Values.connCheck.internetUrl | quote }}
+                - name: DNS_NAME
+                  value: {{ .Values.connCheck.dnsName | quote }}
+              volumeMounts:
+                - name: conncheck-code
+                  mountPath: /scripts
+          volumes:
+            - name: conncheck-code
+              configMap:
+                name: orders-conncheck-code
+{{- end }}

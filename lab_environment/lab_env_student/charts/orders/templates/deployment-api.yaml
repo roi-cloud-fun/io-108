@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  labels:
+    app: orders-api
+    app.kubernetes.io/part-of: orders
+spec:
+  replicas: {{ .Values.api.replicas }}
+  selector:
+    matchLabels:
+      app: orders-api
+  template:
+    metadata:
+      labels:
+        app: orders-api
+      annotations:
+        # Roll pods whenever the app code in the ConfigMap changes.
+        checksum/app-code: {{ printf "%s%s" (.Files.Get "files/orders_api.py") (.Files.Get "files/worker.py") | sha256sum }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount.name }}
+      containers:
+        - name: orders-api
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          # pip install at startup keeps the image a pinned public base --
+          # no registry/build pipeline needed for a training stack.
+          command:
+            - sh
+            - -c
+            - "pip install --quiet flask pg8000 boto3 && python /app/orders_api.py"
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SECRET_ARN
+              value: {{ .Values.env.secretArn | quote }}
+            - name: DB_HOST
+              value: {{ .Values.env.dbHost | quote }}
+            - name: DB_NAME
+              value: {{ .Values.env.dbName | quote }}
+            - name: REPORTS_BUCKET
+              value: {{ .Values.env.reportsBucket | quote }}
+            - name: PORT
+              value: "8080"
+          volumeMounts:
+            - name: app-code
+              mountPath: /app
+          resources:
+{{ toYaml .Values.api.resources | indent 12 }}
+          # pip install takes ~30-60s on first start; probe delays account for it.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 120
+            periodSeconds: 20
+            failureThreshold: 3
+      volumes:
+        - name: app-code
+          configMap:
+            name: orders-app-code

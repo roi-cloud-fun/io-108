@@ -1,0 +1,9 @@
+# Patterns to ignore when packaging/rendering the chart.
+# desktop.ini is dropped into every folder by Google Drive sync and is not a
+# Kubernetes manifest -- without this, `helm template`/`helm install` tries to
+# parse it as YAML and fails. (NO DELETION policy: we ignore, never remove it.)
+desktop.ini
+.DS_Store
+*.swp
+*.bak
+.gitkeep

@@ -1,0 +1,70 @@
+{{- /*
+IO-108 Lab 2 connectivity add-on (+ capstone).
+
+Two toggled NetworkPolicies, enforced by the VPC CNI (the vpc-cni addon is
+created with enableNetworkPolicy=true in eks.tf):
+
+  * default-deny-egress (networkPolicy.defaultDeny): cuts ALL egress from the
+    orders pods -- including the conncheck CronJob -- so pod->internet and
+    pod->DNS break. This is the Lab 2 / capstone connectivity fault. With egress
+    gone the conncheck can't even reach CloudWatch to publish 0, so the
+    eks_pod_internet / eks_pod_dns alarms go red on missing data (intended).
+
+  * selective-allow-egress (networkPolicy.allow): the documented FIX -- re-allow
+    DNS (UDP/TCP 53), intra-namespace traffic, and HTTPS egress (443) so the
+    probes can resolve, reach the internet, and publish again -> tiles re-green.
+
+Both target the whole orders app via app.kubernetes.io/part-of=orders (the
+conncheck pod carries that label too, so the fault reaches it).
+*/ -}}
+{{- if .Values.networkPolicy.defaultDeny }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orders-default-deny-egress
+  labels:
+    app.kubernetes.io/part-of: orders
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: orders
+  policyTypes:
+    - Egress
+  egress: []
+{{- end }}
+{{- if .Values.networkPolicy.allow }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orders-selective-allow-egress
+  labels:
+    app.kubernetes.io/part-of: orders
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: orders
+  policyTypes:
+    - Egress
+  egress:
+    # DNS resolution (CoreDNS).
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Intra-namespace traffic (orders-api <-> worker <-> conncheck).
+    - to:
+        - podSelector: {}
+    # HTTPS egress (AWS APIs, the internet reachability probe).
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+    # Aurora PostgreSQL.
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 5432
+{{- end }}

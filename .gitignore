@@ -1,0 +1,12 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+crash.log
+# Lambda build artifacts (archive_file regenerates from app/lambda_build/)
+*.zip
+# Python / Windows cruft
+__pycache__/
+*.pyc
+desktop.ini

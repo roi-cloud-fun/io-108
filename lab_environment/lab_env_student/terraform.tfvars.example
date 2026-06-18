@@ -1,0 +1,13 @@
+# IO-108 Troubleshooting -- per-student variables.
+# Copy to terraform.tfvars and set your assigned student id.
+
+student_id = "s01"
+region     = "us-east-1"
+
+# Defaults below rarely need changing in class:
+# vpc_cidr                   = "10.42.0.0/16"
+# eks_version                = "1.31"
+# node_instance_type         = "t3.medium"
+# db_instance_class          = "db.t4g.medium"
+# report_schedule_expression = "rate(5 minutes)"
+# tags                       = {}

@@ -1,0 +1,4 @@
+# Placeholder. deploy_app.sh copies ../../app/orders_api.py and
+# ../../app/worker.py here before `helm upgrade --install` so the chart's
+# ConfigMap can pull them via .Files.Get. The canonical app code lives ONCE
+# in lab_env_student/app/.
