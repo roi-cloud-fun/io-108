@@ -137,8 +137,8 @@ This piece is a **documented manual add-on**, not pre-built. Do it if you have t
 
 When AWS-native tools are not enough - or when you genuinely need to see bytes on the wire - you can mirror traffic to an EC2 "analysis box" running open-source tools. Conceptually:
 
-1. **Launch a small EC2 analysis box** (e.g. `t3.small`, Amazon Linux 2023) in a subnet that can receive mirrored traffic, reachable via **SSM** (no SSH).
-2. **Install the OSS toolkit:**
+5. **Launch a small EC2 analysis box** (e.g. `t3.small`, Amazon Linux 2023) in a subnet that can receive mirrored traffic, reachable via **SSM** (no SSH).
+6. **Install the OSS toolkit:**
 
     ```bash
     sudo dnf install -y nmap tcpdump wireshark-cli   # nmap, tcpdump, tshark
@@ -146,8 +146,8 @@ When AWS-native tools are not enough - or when you genuinely need to see bytes o
     ```
 <!-- source: content/narratives/Module_2_narrative.md §"Wireshark and tcpdump for packet capture" -->
 
-3. **Configure VPC Traffic Mirroring:** create a **mirror target** (the analysis box ENI), a **mirror filter** (e.g. the partner CIDR), and a **mirror session** from the source ENI you care about. Mirrored packets now arrive on the analysis box.
-4. **Inspect the same incident on the wire:**
+7. **Configure VPC Traffic Mirroring:** create a **mirror target** (the analysis box ENI), a **mirror filter** (e.g. the partner CIDR), and a **mirror session** from the source ENI you care about. Mirrored packets now arrive on the analysis box.
+8. **Inspect the same incident on the wire:**
 
     ```bash
     sudo tcpdump -ni any net 203.0.113.0/24        # see the one-way SYNs, no returns
@@ -163,7 +163,7 @@ When AWS-native tools are not enough - or when you genuinely need to see bytes o
 
 ## Task 4: Fix the Misroute
 
-5. **Find** the private route table and the offending route. In the **VPC console -> Route tables**, select the `io108-<your-id>` **private** route table, open **Routes**, and locate the entry `203.0.113.0/24 -> igw-...`. Or from the CLI:
+9. **Find** the private route table and the offending route. In the **VPC console -> Route tables**, select the `io108-<your-id>` **private** route table, open **Routes**, and locate the entry `203.0.113.0/24 -> igw-...`. Or from the CLI:
 
     ```bash
     RT_ID=$(aws ec2 describe-route-tables --region "$REGION" \
@@ -174,7 +174,7 @@ When AWS-native tools are not enough - or when you genuinely need to see bytes o
     ```
 <!-- source: facts_extracted_v2.md §"Route Table Troubleshooting" -->
 
-6. **Delete** the misroute so partner traffic falls back to the route table's `0.0.0.0/0 -> NAT gateway` default:
+10. **Delete** the misroute so partner traffic falls back to the route table's `0.0.0.0/0 -> NAT gateway` default:
 
     ```bash
     aws ec2 delete-route --route-table-id "$RT_ID" \
@@ -190,7 +190,7 @@ When AWS-native tools are not enough - or when you genuinely need to see bytes o
 
 The `orders_api_db_access` tile is red because the orders-api IRSA role was stripped of its Aurora-secret read and S3 permissions - the same break you diagnosed in Lab 1 (the pod gets `AccessDenied` reading DB credentials).
 
-7. **Restore** the role's inline policy. Recreate the permissions the healthy role carries:
+11. **Restore** the role's inline policy. Recreate the permissions the healthy role carries:
 
     ```bash
     cat > /tmp/orders_api_restore.json <<JSON
@@ -211,7 +211,7 @@ The `orders_api_db_access` tile is red because the orders-api IRSA role was stri
     ```
 <!-- source: course_outline_v3.md §"IAM/IRSA policy analysis" -->
 
-8. **Restart** the orders-api so pods pick up fresh credentials via IRSA:
+12. **Restart** the orders-api so pods pick up fresh credentials via IRSA:
 
     ```bash
     kubectl -n orders rollout restart deploy/orders-api
@@ -227,7 +227,7 @@ The `orders_api_db_access` tile is red because the orders-api IRSA role was stri
 
 The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny egress **Kubernetes NetworkPolicy** is cutting pod egress (so the in-cluster conncheck CronJob cannot reach the internet or DNS, and its metrics stop publishing).
 
-9. **List** the NetworkPolicies in the `orders` namespace and find the default-deny:
+13. **List** the NetworkPolicies in the `orders` namespace and find the default-deny:
 
     ```bash
     kubectl -n orders get networkpolicy
@@ -235,7 +235,7 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
     ```
 <!-- source: content/narratives/Module_1_narrative.md §"resolve DNS and reach the internet" -->
 
-10. **Remove** the default-deny by redeploying the chart with the policy disabled (the clean, declarative fix):
+14. **Remove** the default-deny by redeploying the chart with the policy disabled (the clean, declarative fix):
 
     ```bash
     helm upgrade orders charts/orders --namespace orders --reuse-values \
@@ -251,7 +251,7 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
 
 ## Task 7: Contain the Rogue (reuse Lab 4)
 
-11. **Revoke** the rogue's Aurora path and **stop** the instance, exactly as in Lab 4:
+15. **Revoke** the rogue's Aurora path and **stop** the instance, exactly as in Lab 4:
 
     ```bash
     ROGUE_SG=$(aws ec2 describe-instances --instance-ids "$ROGUE_ID" --region "$REGION" \
@@ -271,9 +271,9 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
 
 ## Task 8: Confirm the Board Is All Green = Incident Resolved
 
-12. **Return** to the incident board and confirm **every tile is green** across all five lab bands. That is your objective signal that the compound incident is resolved.
+16. **Return** to the incident board and confirm **every tile is green** across all five lab bands. That is your objective signal that the compound incident is resolved.
 
-13. **Sanity-check** end to end: reports flowing, app writing to the writer endpoint, partner path reachable, pods healthy, rogue contained.
+17. **Sanity-check** end to end: reports flowing, app writing to the writer endpoint, partner path reachable, pods healthy, rogue contained.
 
 > **What Just Happened?** You ran a real compound incident the way it should be run: board first to scope it, deliberate triage order, the right tool per layer (Reachability Analyzer and Flow Logs for the route; the per-domain tools for IAM, pods, DB, security), and a clean confirmation that every check recovered. No single "root cause" - four of them, cleared in order.
 
@@ -281,7 +281,7 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
 
 ## Task 9: Post-Incident Write-up (ServiceNow)
 
-14. **Write** a structured post-incident report. In ServiceNow this is the major-incident record; capture at minimum:
+18. **Write** a structured post-incident report. In ServiceNow this is the major-incident record; capture at minimum:
 
     - **Severity:** declared **P0** (multi-system, customer-facing), de-escalated to P1/P2 as layers recovered, closed when the board went fully green.
     - **Timeline:** detection time (board), each tile's red-to-green time, and the action that flipped it.
