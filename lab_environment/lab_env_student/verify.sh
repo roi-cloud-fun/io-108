@@ -29,12 +29,17 @@ else
 fi
 
 # 2. Orders pods Running
-NOT_RUNNING=$(kubectl -n orders get pods --no-headers 2>/dev/null | awk '$3 != "Running"' | wc -l)
-PODS=$(kubectl -n orders get pods --no-headers 2>/dev/null | wc -l)
-if [ "$PODS" -ge 3 ] && [ "$NOT_RUNNING" -eq 0 ]; then
-  pass "all $PODS orders pods Running"
+# NOTE: ignore Completed/Succeeded pods -- the orders-conncheck CronJob spawns
+# short-lived Job pods that finish (Completed) every cycle; those are healthy,
+# not failures. Only long-running pods (orders-api, orders-worker) must be
+# Running. A genuinely broken pod (Pending/CrashLoopBackOff/ImagePullBackOff/
+# OOMKilled -- e.g. scenario=lab2) still counts as not-Running and FAILs.
+RUNNING=$(kubectl -n orders get pods --no-headers 2>/dev/null | awk '$3 == "Running"' | wc -l)
+NOT_RUNNING=$(kubectl -n orders get pods --no-headers 2>/dev/null | awk '$3 != "Running" && $3 != "Completed" && $3 != "Succeeded"' | wc -l)
+if [ "$RUNNING" -ge 3 ] && [ "$NOT_RUNNING" -eq 0 ]; then
+  pass "orders pods healthy ($RUNNING Running; Completed conncheck Job pods ignored)"
 else
-  fail "orders pods -- $NOT_RUNNING of $PODS not Running (kubectl -n orders get pods)"
+  fail "orders pods -- $NOT_RUNNING in a bad state (kubectl -n orders get pods)"
 fi
 
 # 3. /health returns ok (in-cluster probe)
