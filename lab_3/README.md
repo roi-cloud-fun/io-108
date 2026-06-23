@@ -9,18 +9,18 @@
 | **Severity (this incident)** | **P2** - degraded reporting, no customer-facing outage |
 | **Incident platform** | ServiceNow (log the incident, attach your timeline, set Priority = P2) |
 | **Prerequisites** | Labs 1-2 completed; AWS CLI v2, `kubectl`, `jq` configured for the training account; access to your `io108-<id>-incident-board` CloudWatch dashboard |
-| **Builds On** | The single connected application stack you deployed in Lab 0 (EKS orders-api -> Aurora -> Lambda/Step Functions reporting). The rogue instance from the security through-line is still present and its tiles (`aurora_no_rogue`, `rogue_contained`) stay red until Lab 4 / the capstone. |
+| **Builds On** | The single connected application stack you deployed in Lab 0 (EKS orders-api -> Aurora -> Lambda/Step Functions reporting). The rogue instance from the security through-line is still present and its tiles (`aurora_no_rogue`, `rogue_contained`) stay red until Lab 4/the capstone. |
 
 ---
 
 ## Lab Overview
 
-SYF's Technology Operations group runs a scheduled reporting workflow: every few minutes an **Amazon EventBridge** rule starts an **AWS Step Functions** state machine, which invokes a **report-generator AWS Lambda** that queries Aurora and writes a JSON report to S3. This morning the business reported that reports have gone stale - the dashboards downstream are showing yesterday's numbers.
+SYF's Technology Operations group runs a scheduled reporting workflow: every few minutes an **Amazon EventBridge** rule starts an **AWS Step Functions** state machine, which invokes a **report-generator AWS Lambda** that queries Aurora and writes a JSON report to S3. This morning the business reported that reports have gone stale — the dashboards downstream are showing yesterday's numbers.
 
 In this lab you treat that as a real incident. You will:
 
 1. Open the **red/green incident board** and confirm which tile is red.
-2. Diagnose the workflow failure using **Step Functions execution history** and **Lambda CloudWatch metrics** (Throttles vs Errors).
+2. Diagnose the workflow failure using **Step Functions execution history** and **Lambda CloudWatch metrics** (Throttles vs. Errors).
 3. Apply the fix and watch the `reports_flowing` tile go green.
 4. Study the **event fan-out** pipeline that distributes a single incident event to multiple monitoring endpoints, and verify the same event lands in both simulated sinks.
 
@@ -136,7 +136,7 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
 
     You are looking for a cause that mentions throttling / `TooManyRequestsException` / `Rate Exceeded`, not an application stack trace. **That distinction is the whole diagnosis:** the workflow is wired correctly and the Lambda code is fine — the function is being *throttled before it runs*.
 
-> **What Just Happened?** Step Functions did exactly what it was told: it retried a failing task and, when the retries were exhausted, failed the execution cleanly into `ReportFailed`. The failure is not in the workflow logic - it is in the Lambda's capacity to execute.
+> **What Just Happened?** Step Functions did exactly what it was told: it retried a failing task and, when the retries were exhausted, failed the execution cleanly into `ReportFailed`. The failure is not in the workflow logic — it is in the Lambda's capacity to execute.
 
 ---
 
@@ -167,7 +167,7 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
 
     Expected: `"ReservedConcurrentExecutions": 0`. A reserved concurrency of **0** means the function is allowed **zero** simultaneous executions — so AWS throttles every single invocation.
 
-> **Throttles vs Errors — the takeaway:** **Throttles** mean the platform refused to run your function (capacity/quota). **Errors** mean your function ran and failed (bug, exception, timeout). They live in different metrics and point at completely different fixes. Misreading one for the other sends responders down the wrong path.
+> **Throttles vs. Errors — the takeaway:** **Throttles** mean the platform refused to run your function (capacity/quota). **Errors** mean your function ran and failed (bug, exception, timeout). They live in different metrics and point at completely different fixes. Misreading one for the other sends responders down the wrong path.
 
 ---
 
