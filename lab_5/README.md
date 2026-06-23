@@ -1,4 +1,4 @@
-# Lab 5: Multi-Layered Incident Simulation - Capstone
+# Lab 5: Multi-Layered Incident Simulation — Capstone
 
 | | |
 |---|---|
