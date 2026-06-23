@@ -52,7 +52,7 @@ By the end of this lab, you will be able to:
 
 ## Pre-Lab Setup
 
-Run from a local clone or AWS CloudShell - **not** a Google Drive / OneDrive synced folder.
+Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive synced folder.
 
 1. **Materialize this lab's incident.** From the lab environment directory, apply the `lab3` scenario (replace `s01` with your assigned student id):
 
@@ -102,7 +102,7 @@ Run from a local clone or AWS CloudShell - **not** a Google Drive / OneDrive syn
 
     The two sink tiles being green tells you the event-distribution pipeline is healthy; only report *generation* is broken. That narrows the incident immediately.
 
-> **Expected Result:** `reports_flowing` is red; both `sink_*` tiles are green. Note the time the tile went red - that is your incident start time for the ServiceNow timeline.
+> **Expected Result:** `reports_flowing` is red; both `sink_*` tiles are green. Note the time the tile went red — that is your incident start time for the ServiceNow timeline.
 
 ---
 
@@ -134,7 +134,7 @@ Run from a local clone or AWS CloudShell - **not** a Google Drive / OneDrive syn
     ```
 <!-- source: Module_3_narrative.md §"Open the failed execution and read the history" -->
 
-    You are looking for a cause that mentions throttling / `TooManyRequestsException` / `Rate Exceeded`, not an application stack trace. **That distinction is the whole diagnosis:** the workflow is wired correctly and the Lambda code is fine - the function is being *throttled before it runs*.
+    You are looking for a cause that mentions throttling / `TooManyRequestsException` / `Rate Exceeded`, not an application stack trace. **That distinction is the whole diagnosis:** the workflow is wired correctly and the Lambda code is fine — the function is being *throttled before it runs*.
 
 > **What Just Happened?** Step Functions did exactly what it was told: it retried a failing task and, when the retries were exhausted, failed the execution cleanly into `ReportFailed`. The failure is not in the workflow logic - it is in the Lambda's capacity to execute.
 
@@ -144,8 +144,8 @@ Run from a local clone or AWS CloudShell - **not** a Google Drive / OneDrive syn
 
 6. **Open** the Lambda console, select function `$REPORT_FN`, and go to the **Monitor** tab. Compare two metrics over the last hour:
 
-    - **Throttles** - elevated (every invocation is being throttled).
-    - **Errors** - flat or zero (the code never ran, so it never errored).
+    - **Throttles** — elevated (every invocation is being throttled).
+    - **Errors** — flat or zero (the code never ran, so it never errored).
 
     From the CLI, confirm the throttle count is non-zero:
 
@@ -158,16 +158,16 @@ Run from a local clone or AWS CloudShell - **not** a Google Drive / OneDrive syn
     ```
 <!-- source: Module_3_narrative.md §"The Throttles metric in CloudWatch counts these exactly" -->
 
-7. **Check** the function's concurrency configuration - this is the root cause:
+7. **Check** the function's concurrency configuration — this is the root cause:
 
     ```bash
     aws lambda get-function-concurrency --function-name "$REPORT_FN" --region "$REGION"
     ```
 <!-- source: Lab_3_narrative.md §"aws lambda get-function-concurrency" -->
 
-    Expected: `"ReservedConcurrentExecutions": 0`. A reserved concurrency of **0** means the function is allowed **zero** simultaneous executions - so AWS throttles every single invocation.
+    Expected: `"ReservedConcurrentExecutions": 0`. A reserved concurrency of **0** means the function is allowed **zero** simultaneous executions — so AWS throttles every single invocation.
 
-> **Throttles vs Errors - the takeaway:** **Throttles** mean the platform refused to run your function (capacity/quota). **Errors** mean your function ran and failed (bug, exception, timeout). They live in different metrics and point at completely different fixes. Misreading one for the other sends responders down the wrong path.
+> **Throttles vs Errors — the takeaway:** **Throttles** mean the platform refused to run your function (capacity/quota). **Errors** mean your function ran and failed (bug, exception, timeout). They live in different metrics and point at completely different fixes. Misreading one for the other sends responders down the wrong path.
 
 ---
 
@@ -241,11 +241,11 @@ A **Step Functions Parallel** state sends the *same input* to every branch simul
     echo "== SolarWinds sink =="; aws s3 ls "s3://$SINK_SW/" --recursive | tail -3
     ```
 
-    Expected: both buckets received a new object at the same time - the single fan-out execution reached both monitoring endpoints.
+    Expected: both buckets received a new object at the same time — the single fan-out execution reached both monitoring endpoints.
 
 > **Expected Result:** Both `sink_newrelic` and `sink_solarwinds` tiles remain **green**, and you can see a matching pair of fresh objects in the two buckets. You have proven the platform delivers one incident event to multiple tools.
 
-> **What Just Happened?** This is how AWS distributes a single observability event to a whole monitoring estate. The Parallel state is the fan-out primitive; SQS gives each destination its own buffered, retryable queue; the forwarder Lambda does any per-tool transformation. Add a third tool tomorrow and you add one branch and one queue - the source event does not change.
+> **What Just Happened?** This is how AWS distributes a single observability event to a whole monitoring estate. The Parallel state is the fan-out primitive; SQS gives each destination its own buffered, retryable queue; the forwarder Lambda does any per-tool transformation. Add a third tool tomorrow and you add one branch and one queue — the source event does not change.
 
 ---
 
@@ -255,7 +255,7 @@ A **Step Functions Parallel** state sends the *same input* to every branch simul
 
 **Check:** Confirm `aws lambda get-function-concurrency` no longer returns `0`. Then confirm the most recent Step Functions execution is `SUCCEEDED` and a report object newer than your fix time exists in S3.
 
-**Fix:** If concurrency is correct but executions still fail, read the new failure cause - it should now be an application/DB error, not a throttle, which is a different problem. Give the dashboard 1-2 minutes; the probe only runs once a minute.
+**Fix:** If concurrency is correct but executions still fail, read the new failure cause — it should now be an application/DB error, not a throttle, which is a different problem. Give the dashboard 1-2 minutes; the probe only runs once a minute.
 
 ### Step Functions execution shows no failures at all
 
@@ -278,9 +278,9 @@ A **Step Functions Parallel** state sends the *same input* to every branch simul
 <details>
 <summary><strong>Answers</strong></summary>
 
-**A1:** The **Errors** metric was flat/zero while **Throttles** was elevated, which means the function code never executed - so there is no application bug to find. The root cause is capacity: reserved concurrency pinned to 0 caused AWS to throttle every invocation before it ran. The fix is to restore concurrency, not to touch the code.
+**A1:** The **Errors** metric was flat/zero while **Throttles** was elevated, which means the function code never executed — so there is no application bug to find. The root cause is capacity: reserved concurrency pinned to 0 caused AWS to throttle every invocation before it ran. The fix is to restore concurrency, not to touch the code.
 
-**A2:** Reserved concurrency caps the number of simultaneous executions a function may have. Set to `0`, the function is permitted zero concurrent executions, so every invocation is rejected by the Lambda service with a throttle (`TooManyRequestsException` / 429). The code is never entered, so nothing can raise an application error - that is why it shows as a throttle, not an error.
+**A2:** Reserved concurrency caps the number of simultaneous executions a function may have. Set to `0`, the function is permitted zero concurrent executions, so every invocation is rejected by the Lambda service with a throttle (`TooManyRequestsException` / 429). The code is never entered, so nothing can raise an application error — that is why it shows as a throttle, not an error.
 
 **A3:** Add one branch to the Parallel state (and its own SQS queue + forwarder handling) for the new destination. The Parallel state passes the *same input* to every branch, so the source event and the upstream alarm/EventBridge wiring are unchanged - you are only adding a new delivery leg.
 
@@ -295,8 +295,8 @@ A **Step Functions Parallel** state sends the *same input* to every branch simul
 - You restored capacity by raising reserved concurrency and watched `reports_flowing` go green.
 - You traced the **event fan-out** (CloudWatch Alarm -> EventBridge -> Step Functions Parallel -> SQS x N -> forwarder Lambda -> S3 sinks) and verified one event reaching two monitoring endpoints.
 
-**Before you move on:** In **ServiceNow**, record this as a **P2** incident - title, start time (tile went red), root cause (reserved concurrency = 0 throttling the report Lambda), remediation (raised reserved concurrency to 5), and recovery time (tile went green). You will assemble several of these into a full post-incident report in the Lab 5 capstone.
+**Before you move on:** In **ServiceNow**, record this as a **P2** incident — title, start time (tile went red), root cause (reserved concurrency = 0 throttling the report Lambda), remediation (raised reserved concurrency to 5), and recovery time (tile went green). You will assemble several of these into a full post-incident report in the Lab 5 capstone.
 
 ## Next Steps
 
-In **Lab 4: Aurora Failover and Connectivity Investigation**, the database stays *up* but the application can no longer write to it - the classic "the database is fine but the app is broken" incident. You will also trace live database sessions to catch the rogue client that has been querying Aurora since day one.
+In **Lab 4: Aurora Failover and Connectivity Investigation**, the database stays *up* but the application can no longer write to it — the classic "the database is fine but the app is broken" incident. You will also trace live database sessions to catch the rogue client that has been querying Aurora since day one.
