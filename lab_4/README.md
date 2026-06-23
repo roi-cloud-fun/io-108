@@ -15,7 +15,7 @@
 
 ## Lab Overview
 
-SYF's orders-api writes every order to **Amazon Aurora PostgreSQL**. Overnight the on-call engineer was paged: customers can read their order history, but new orders fail. The database is clearly *reachable* - so why can't the app write?
+SYF's orders-api writes every order to **Amazon Aurora PostgreSQL**. Overnight the on-call engineer was paged: customers can read their order history, but new orders fail. The database is clearly *reachable* — so why can't the app write?
 
 This is the classic, frequently-misdiagnosed incident: **the database is up but the application can't write.** In this lab you will:
 
@@ -24,7 +24,7 @@ This is the classic, frequently-misdiagnosed incident: **the database is up but 
 3. Distinguish the Aurora **cluster (writer)**, **reader**, and **instance** endpoints, and repoint the app to the correct one.
 4. Use **query tracing** (`pg_stat_activity`, Performance Insights, connection logs) to catch the **rogue client** that has been quietly querying Aurora, and lock it out.
 
-> **Note on SYF's network:** This lab uses native AWS networking. Aurora connectivity here is within the VPC; where account-to-account or account-to-partner transit appears (the capstone), the hub-and-spoke transit in your environment is **Aviatrix**, managed by the network team - the concepts map directly; the management plane differs.
+> **Note on SYF's network:** This lab uses native AWS networking. Aurora connectivity here is within the VPC; where account-to-account or account-to-partner transit appears (the capstone), the hub-and-spoke transit in your environment is **Aviatrix**, managed by the network team — the concepts map directly; the management plane differs.
 
 ---
 
@@ -32,7 +32,7 @@ This is the classic, frequently-misdiagnosed incident: **the database is up but 
 
 > **Incident:** "Order writes started failing at 02:40. App logs show `cannot execute INSERT in a read-only transaction`. The database console shows the cluster Available and healthy. Reads work."
 
-The application's database host was changed to the **Aurora reader endpoint** instead of the **cluster (writer) endpoint**. The reader only ever points at a read-only replica, so the connection succeeds, `SELECT`s work, but any `INSERT`/`UPDATE`/`DELETE` is rejected. Your board shows `aurora_reachable` **green** and `aurora_writable` **red** - a precise picture of "up but can't write."
+The application's database host was changed to the **Aurora reader endpoint** instead of the **cluster (writer) endpoint**. The reader only ever points at a read-only replica, so the connection succeeds, `SELECT`s work, but any `INSERT`/`UPDATE`/`DELETE` is rejected. Your board shows `aurora_reachable` **green** and `aurora_writable` **red** — a precise picture of "up but can't write."
 
 Separately, the `aurora_no_rogue` tile is red: a rogue instance is opening sessions to Aurora. You will trace it on the database and shut its access path.
 
@@ -103,7 +103,7 @@ Run from a local clone or AWS CloudShell.
     - **Aurora writable (writer endpoint)** (`aurora_writable`) - **RED**
     - **Aurora: no rogue sessions** (`aurora_no_rogue`) - **RED**
 
-    The combination green-reachable / red-writable is the signature of this incident class. The network path and credentials are fine; the *target* is wrong.
+    The combination green-reachable/red-writable is the signature of this incident class. The network path and credentials are fine; the *target* is wrong.
 
 2. **Reproduce** the application symptom. Check the orders-api logs for the read-only error:
 
@@ -131,7 +131,7 @@ Run from a local clone or AWS CloudShell.
     ```
 <!-- source: Module_3_narrative.md §"read replica" -->
 
-    Expected: `pg_is_in_recovery` returns **`t`** (true) - this connection is on a read replica, which is read-only by definition.
+    Expected: `pg_is_in_recovery` returns **`t`** (true) — this connection is on a read replica, which is read-only by definition.
 
 4. **Compare** against the cluster (writer) endpoint:
 
@@ -143,12 +143,12 @@ Run from a local clone or AWS CloudShell.
     ```
 <!-- source: Module_3_narrative.md §"always tracks the current primary" -->
 
-    Expected: returns **`f`** (false) - the cluster endpoint always points at the current writer.
+    Expected: returns **`f`** (false) — the cluster endpoint always points at the current writer.
 
 > **The three Aurora endpoints - know which is which:**
-> - **Cluster (writer) endpoint** - always points at the current primary; use it for read-write workloads. Survives failover automatically.
-> - **Reader endpoint** - load-balances across read replicas; read-only. Great for reporting, wrong for writes.
-> - **Instance endpoints** - target one specific instance by name; brittle, because that instance can become a reader or be replaced during failover.
+> - **Cluster (writer) endpoint** — always points at the current primary; use it for read-write workloads. Survives failover automatically.
+> - **Reader endpoint** — load-balances across read replicas; read-only. Great for reporting, wrong for writes.
+> - **Instance endpoints** — target one specific instance by name; brittle, because that instance can become a reader or be replaced during failover.
 >
 > Open the **RDS console -> Databases -> your cluster -> Connectivity & security** and read all three off the page so you can recognize them by shape next time.
 
@@ -187,7 +187,7 @@ Run from a local clone or AWS CloudShell.
 
 > **Expected Result:** Within 1-2 minutes the **Aurora writable** (`aurora_writable`) tile turns **GREEN**. The app can persist orders again. Record recovery time.
 
-> **What Just Happened?** Nothing was wrong with the database, the network, or the credentials. The app was simply pointed at a read-only target. In a real failover, the *same* fix matters: applications must use the cluster endpoint so they follow the writer automatically - hard-coding an instance or reader endpoint is what turns a 30-second failover into an outage.
+> **What Just Happened?** Nothing was wrong with the database, the network, or the credentials. The app was simply pointed at a read-only target. In a real failover, the *same* fix matters: applications must use the cluster endpoint so they follow the writer automatically — hard-coding an instance or reader endpoint is what turns a 30-second failover into an outage.
 
 ---
 
@@ -209,9 +209,9 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has opene
     ```
 <!-- source: Module_3_narrative.md §"the source address on the query is the tell" -->
 
-    Compare the `client_addr` values against the rogue IP you captured (`$ROGUE_IP`). The rogue's source IP will appear, running a benign-looking `SELECT 1` - exactly the kind of low-and-slow access that hides in plain sight.
+    Compare the `client_addr` values against the rogue IP you captured (`$ROGUE_IP`). The rogue's source IP will appear, running a benign-looking `SELECT 1` — exactly the kind of low-and-slow access that hides in plain sight.
 
-9. **Corroborate with Performance Insights.** In the **RDS console -> Performance Insights**, select your writer instance, and group the top load **by host / client**. The rogue's host shows up as a contributor distinct from the application pods. This is the GUI view of the same evidence - useful when you cannot get a psql session.
+9. **Corroborate with Performance Insights.** In the **RDS console -> Performance Insights**, select your writer instance, and group the top load **by host / client**. The rogue's host shows up as a contributor distinct from the application pods. This is the GUI view of the same evidence — useful when you cannot get a psql session.
 
 10. **Corroborate with connection logs.** The cluster has `log_connections` and `log_disconnections` enabled. In **CloudWatch Logs**, open the log group `/aws/rds/cluster/io108-<your-id>-aurora/postgresql` and filter for the rogue IP:
 
@@ -263,7 +263,7 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has opene
 
 ### `aurora_writable` stays red after repointing
 
-**Check:** Confirm the running pods actually use the writer endpoint: `kubectl -n orders exec deploy/orders-api -- printenv | grep -i dbhost` (or check the value you set). Make sure you ran `rollout restart` - existing pods keep their old connection until recycled.
+**Check:** Confirm the running pods actually use the writer endpoint: `kubectl -n orders exec deploy/orders-api -- printenv | grep -i dbhost` (or check the value you set). Make sure you ran `rollout restart` — existing pods keep their old connection until recycled.
 
 ### `psql` pod cannot connect at all (timeout)
 
@@ -279,16 +279,16 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has opene
 
 **Question 1:** The database was Available the whole time and reads worked, yet writes failed. Explain in one or two sentences why, and what single query you would run to confirm a connection is on a read replica.
 
-**Question 2:** Name the three Aurora endpoint types and state which one a read-write application should use and why - specifically what happens to each during a failover.
+**Question 2:** Name the three Aurora endpoint types and state which one a read-write application should use and why — specifically what happens to each during a failover.
 
 **Question 3:** You found the rogue by its `client_addr` in `pg_stat_activity`. Why is it better practice to corroborate with at least one more source (Performance Insights or the connection log) before containing, and why did you revoke the security-group rule *and* stop the instance rather than just blocking the IP?
 
 <details>
 <summary><strong>Answers</strong></summary>
 
-**A1:** The application was connected to the Aurora **reader** endpoint, which always lands on a read-only replica; the replica accepts connections and `SELECT`s but rejects any write with `cannot execute ... in a read-only transaction`. Confirm with `SELECT pg_is_in_recovery();` - it returns `t` (true) on a replica, `f` (false) on the writer.
+**A1:** The application was connected to the Aurora **reader** endpoint, which always lands on a read-only replica; the replica accepts connections and `SELECT`s but rejects any write with `cannot execute ... in a read-only transaction`. Confirm with `SELECT pg_is_in_recovery();` — it returns `t` (true) on a replica, `f` (false) on the writer.
 
-**A2:** **Cluster (writer) endpoint** - always tracks the current primary; the right choice for read-write apps because it automatically follows the writer through a failover. **Reader endpoint** - load-balances across read replicas and is read-only. **Instance endpoint** - targets one named instance, which is brittle because that instance can be demoted to a reader or replaced during failover. A read-write app must use the cluster endpoint.
+**A2:** **Cluster (writer) endpoint** — always tracks the current primary; the right choice for read-write apps because it automatically follows the writer through a failover. **Reader endpoint** - load-balances across read replicas and is read-only. **Instance endpoint** — targets one named instance, which is brittle because that instance can be demoted to a reader or replaced during failover. A read-write app must use the cluster endpoint.
 
 **A3:** Multiple independent lenses guard against acting on a false positive (e.g. a legitimate admin host that merely looks unusual); `pg_stat_activity` (live), Performance Insights (historical top SQL by host), and the connection log (audit) agreeing gives confidence. Revoking the SG rule removes the authorized network path so the rogue cannot reconnect from any address that relied on it, and stopping the instance contains the compromised asset itself - blocking only the current IP would let it return from a new one.
 
@@ -301,10 +301,10 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has opene
 - You diagnosed an "up but can't write" incident: Aurora **reachable** but **not writable** because the app was on the **reader** endpoint.
 - You proved it with `pg_is_in_recovery()` and distinguished the **cluster / reader / instance** endpoints.
 - You repointed the app to the **cluster (writer) endpoint** and confirmed recovery on the board.
-- You traced the rogue client three ways - **`pg_stat_activity`**, **Performance Insights**, **connection logs** - identified it by source IP, and contained it by revoking its SG path and stopping the instance.
+- You traced the rogue client three ways — **`pg_stat_activity`**, **Performance Insights**, **connection logs** - identified it by source IP, and contained it by revoking its SG path and stopping the instance.
 
 **Before you move on:** Log this in **ServiceNow** as a **P1** (downgrading to P2 after the writer repoint stabilizes). Capture: start time, root cause (app pointed at reader endpoint; separately, rogue sessions from `$ROGUE_IP`), remediation (repoint to cluster endpoint; revoke rogue SG ingress; stop rogue instance), and recovery times for both tiles.
 
 ## Next Steps
 
-In **Lab 5: Multi-Layered Incident Simulation (Capstone)**, several failures hit at once - a network misroute, a broken IAM path, a pod-network deny, and the rogue - lighting up the whole board. You will lead with the incident board as your map, add **VPC Flow Logs**, **Reachability Analyzer**, and an optional **open-source packet-analysis box**, clear every tile, and write the post-incident report.
+In **Lab 5: Multi-Layered Incident Simulation (Capstone)**, several failures hit at once — a network misroute, a broken IAM path, a pod-network deny, and the rogue — lighting up the whole board. You will lead with the incident board as your map, add **VPC Flow Logs**, **Reachability Analyzer**, and an optional **open-source packet-analysis box**, clear every tile, and write the post-incident report.
