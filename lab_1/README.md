@@ -50,7 +50,7 @@ By the end of this lab, you will:
 - Read an `AccessDenied` error from pod logs and identify the exact API action and principal involved.
 - Inspect an IRSA role's inline policy and use `iam:SimulatePrincipalPolicy` to confirm which action is being denied and why.
 - Restore the missing permission and verify the application recovers — `orders-api DB access (IRSA)` returns to green.
-- Use **CloudTrail** to attribute activity to the rogue IAM principal and **AWS Config** / tag search to enumerate what it created.
+- Use **CloudTrail** to attribute activity to the rogue IAM principal and **AWS Config**/tag search to enumerate what it created.
 - **Contain** the rogue instance and confirm `Rogue contained` turns green.
 
 ---
@@ -224,7 +224,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
 
     Also look at `AssumeRole` events and filter for the rogue role name (`io108-$SID-rogue-actor`). CloudTrail shows you **who** acted, **when**, and **from where** — the attribution backbone of any incident.
 
-> **Expected Result:** You can point to CloudTrail entries where the **rogue-actor** principal read the Aurora master secret on a roughly one-minute cadence — activity the legitimate `orders-api` role never performs. This is your evidence that a second, unauthorised principal is using stolen credentials against your database.
+> **Expected Result:** You can point to CloudTrail entries where the **rogue-actor** principal read the Aurora master secret on a roughly one-minute cadence — activity the legitimate `orders-api` role never performs. This is your evidence that a second, unauthorized principal is using stolen credentials against your database.
 
 ---
 
@@ -292,7 +292,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
 
 ## Lab Summary
 
-You worked a **P2** access-denial incident from the board tile to root cause and back to green: pod logs surfaced an `AccessDenied` on `secretsmanager:GetSecretValue`, the IAM policy simulator confirmed an **implicit deny** caused by a stripped permission, and restoring the role's policy — full S3 object access plus the secret read — recovered the `orders-api DB access (IRSA)` check. You then opened the rogue hunt: **CloudTrail** attributed unauthorised secret reads to the tagged `rogue-actor` principal, **AWS Config** and a tag search enumerated the rogue EC2 instance, and you **contained** it — turning `Rogue contained` green. The deeper Aurora-side lockout waits for Lab 4.
+You worked a **P2** access-denial incident from the board tile to root cause and back to green: pod logs surfaced an `AccessDenied` on `secretsmanager:GetSecretValue`, the IAM policy simulator confirmed an **implicit deny** caused by a stripped permission, and restoring the role's policy — full S3 object access plus the secret read — recovered the `orders-api DB access (IRSA)` check. You then opened the rogue hunt: **CloudTrail** attributed unauthorized secret reads to the tagged `rogue-actor` principal, **AWS Config** and a tag search enumerated the rogue EC2 instance, and you **contained** it — turning `Rogue contained` green. The deeper Aurora-side lockout waits for Lab 4.
 
 ## Completion Checklist
 
