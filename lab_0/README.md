@@ -32,7 +32,7 @@ A background **health-checker Lambda** runs a set of probes about once a minute 
 
 You are an engineer on SYF's Technology Operations team. A new order-processing service has just been handed to Operations to run. Before you can respond to incidents on it, you need the service deployed in your training account and a working **health board** so you can see, at a glance, what is up and what is down.
 
-This lab is not an incident — it is the **baseline capture**. But the board you build here is exactly the board you will triage against for the rest of the course. From Lab 1 on, every red tile is a live incident: you will assign it a severity on the **P0–P4** scale and log it in **ServiceNow**, just as you would on the job. Lab 0 establishes "normal" so you can recognise "abnormal" the moment it appears.
+This lab is not an incident — it is the **baseline capture**. But the board you build here is exactly the board you will triage against for the rest of the course. From Lab 1 on, every red tile is a live incident: you will assign it a severity on the **P0–P4** scale and log it in **ServiceNow**, just as you would on the job. Lab 0 establishes "normal" so you can recognize "abnormal" the moment it appears.
 
 ---
 
@@ -89,7 +89,7 @@ By the end of this lab, you will:
     # edit terraform.tfvars: set student_id = "sNN" (your id) and region
     ```
 
-6. **Initialise** Terraform, then **apply** the **healthy** baseline. The `scenario` variable defaults to `healthy`, so no fault is injected — this is the green starting point:
+6. **Initialize** Terraform, then **apply** the **healthy** baseline. The `scenario` variable defaults to `healthy`, so no fault is injected — this is the green starting point:
 
     ```bash
     terraform init
@@ -165,7 +165,7 @@ By the end of this lab, you will:
 
 12. **Open** the AWS Management Console, go to **CloudWatch → Dashboards**, and open **`io108-$SID-incident-board`** (the value in `$DASHBOARD`).
 
-13. **Study** the layout. The board is organised into bands, one per lab, each a row of **alarm-status tiles**:
+13. **Study** the layout. The board is organized into bands, one per lab, each a row of **alarm-status tiles**:
 
     | Band | Tiles |
     |------|-------|
