@@ -92,7 +92,7 @@ Run from a local clone or AWS CloudShell.
 
 ---
 
-## Task 1: Lead with the Board - Scope and Order the Incident
+## Task 1: Lead with the Board — Scope and Order the Incident
 
 1. **Open** your incident board (`$DASHBOARD`). Note **every** red tile. You should see (at minimum): `app_path_reachable`, `tgw_or_network_ok`, `orders_api_db_access`, `eks_pod_internet`, `eks_pod_dns`, `aurora_no_rogue`, `rogue_contained`.
 
@@ -127,11 +127,11 @@ Run from a local clone or AWS CloudShell.
 
     The result reports **Not reachable** and points at the route table hop - a route for `203.0.113.0/24` sending traffic to an **internet gateway** instead of the NAT gateway. Reachability Analyzer has just told you exactly which hop is misconfigured, without reading a single packet.
 
-> **Flow Logs vs Reachability Analyzer:** Flow Logs show you what *did* happen on the wire (drops, asymmetry, volume). Reachability Analyzer reasons about the *configuration* and tells you which hop *would* break a path and why - even with no live traffic. For a routing fault, Reachability Analyzer usually localizes it fastest; Flow Logs confirm the real-world symptom.
+> **Flow Logs vs. Reachability Analyzer:** Flow Logs show you what *did* happen on the wire (drops, asymmetry, volume). Reachability Analyzer reasons about the *configuration* and tells you which hop *would* break a path and why — even with no live traffic. For a routing fault, Reachability Analyzer usually localizes it fastest; Flow Logs confirm the real-world symptom.
 
 ---
 
-## Task 3: (Optional add-on) Open-Source Packet-Analysis Box - Compare and Contrast
+## Task 3: (Optional add-on) Open-Source Packet-Analysis Box — Compare and Contrast
 
 This piece is a **documented manual add-on**, not pre-built. Do it if you have time; the lesson is about *tool selection*, not about the capture itself.
 
@@ -337,7 +337,7 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
 ## Lab Summary
 
 - You led a **compound (P0) incident** from the **red/green board**, scoping the full set of failures before acting.
-- You diagnosed a **network blackhole** with **Flow Logs** (asymmetry) and **Reachability Analyzer** (the misconfigured hop), and saw where an **OSS packet-analysis box** fits - and where it is overkill.
+- You diagnosed a **network blackhole** with **Flow Logs** (asymmetry) and **Reachability Analyzer** (the misconfigured hop), and saw where an **OSS packet-analysis box** fits — and where it is overkill.
 - You cleared every layer: deleted the **misroute**, restored the **IRSA** path, removed the default-deny **NetworkPolicy**, and **contained the rogue**.
 - You confirmed **every tile green** and wrote a structured **ServiceNow post-incident report** with severity, timeline, root cause, and remediation.
 
