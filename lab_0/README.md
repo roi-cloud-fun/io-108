@@ -43,7 +43,7 @@ By the end of this lab, you will:
 - Deploy the connected application (Amazon EKS orders API → Aurora → Lambda/Step Functions reporting) into your own training account with a single `terraform apply`.
 - Deploy the workload onto your EKS cluster with `deploy_app.sh` and confirm the application responds and reports are flowing.
 - Open and read your **red/green incident board**, understanding what each tile measures and how the health-checker publishes it.
-- Capture a clean **baseline** and recognise which tiles are *intentionally* red from day one because of the security through-line.
+- Capture a clean **baseline** and recognize which tiles are *intentionally* red from day one because of the security through-line.
 
 ---
 
