@@ -46,7 +46,7 @@ resource "aws_security_group" "aurora" {
 resource "aws_rds_cluster" "main" {
   cluster_identifier = "${local.name_prefix}-aurora"
   engine             = "aurora-postgresql"
-  engine_version     = "16.6"
+  engine_version     = "16.8"
   database_name      = "orders"
 
   master_username             = "orders_admin"
