@@ -34,10 +34,15 @@ You open a **P2** incident in **ServiceNow**: the workload is down, but the blas
 ```bash
 cd lab_environment/lab_env_student
 terraform apply -var student_id=$SID -var scenario=lab2
+./deploy_app.sh
 ```
 <!-- source: course_outline_v3.md §"Lab 2: EKS Pod Failure Investigation" -->
 
-This scales your managed node group to **zero** and applies a default-deny egress NetworkPolicy to the `orders` namespace. Within a minute the three Lab 2 tiles go red.
+The `terraform apply` scales your managed node group to **zero**; the `./deploy_app.sh`
+re-deploy applies the default-deny egress NetworkPolicy to the `orders` namespace (the policy
+is delivered by the Helm chart, so the redeploy is required — terraform alone does not apply
+it). Within a minute the three Lab 2 tiles go red. (`deploy_app.sh` will warn that the
+`orders-api` rollout did not complete — that is expected with zero nodes; it continues anyway.)
 
 ---
 
@@ -161,7 +166,7 @@ By the end of this lab, you will:
 
 > **Expected Result:** Two nodes reach `Ready`; the `orders-api` and `worker` pods move `Pending → ContainerCreating → Running`. Within a minute of the pods running, the **`EKS pods schedulable`** tile turns **green**. The sold incident's first half is resolved — record the root cause (node group scaled to zero) in ServiceNow.
 
-> **Why not `terraform apply` to fix it?** The node group carries `ignore_changes` on `desired_size` specifically so your out-of-band CLI remediation is respected and a later `terraform apply` will not silently revert it. Fixing capacity with the EKS API (or console) is the realistic Operations action and the one the board rewards.
+> **Why fix it with the EKS API instead of `terraform apply`?** Fixing capacity with the EKS API (or console) is the realistic Operations action — it is what an on-call engineer does to restore service immediately, and it is the action the board rewards. Your `update-nodegroup-config` fix holds for the rest of this lab. (Note: because the fault itself is expressed in Terraform as `scenario=lab2`, re-running `terraform apply` while still on `scenario=lab2` would re-inject the fault and scale the group back to zero — so don't re-apply until you move to the next lab/scenario.)
 
 ---
 
@@ -169,25 +174,39 @@ By the end of this lab, you will:
 
 With pods running again, the `Pod → internet` and `Pod → DNS` tiles are still red. The in-cluster connectivity checker cannot reach the internet or resolve names — so it stops publishing and its tiles stay red.
 
-11. **Test egress from inside a pod.** Exec into an `orders-api` pod and try to reach the internet with a short timeout:
+11. **Reproduce the egress block from a pod the policy applies to.** The default-deny
+    NetworkPolicy selects pods labelled `app.kubernetes.io/part-of: orders` — that includes the
+    in-cluster **conncheck** probe whose blocked egress is exactly what turned the
+    `Pod → internet` / `Pod → DNS` tiles red. Launch a throwaway pod carrying that label and
+    test internet egress. (The `orders-api` app image is `python:3.12-slim` and ships no
+    `curl`/`nslookup`, so use Python, which it does have.)
 
     ```bash
-    POD=$(kubectl -n orders get pods -l app=orders-api -o jsonpath='{.items[0].metadata.name}')
-    kubectl -n orders exec "$POD" -- curl -m5 -sS https://example.com -o /dev/null -w '%{http_code}\n' || echo "egress blocked"
+    kubectl -n orders run nettest --rm -i --restart=Never \
+      --labels="app.kubernetes.io/part-of=orders" \
+      --image=public.ecr.aws/docker/library/python:3.12-slim -- \
+      python -c "import socket; socket.setdefaulttimeout(5); socket.create_connection(('example.com',443)); print('reachable')" \
+      || echo "egress blocked"
     ```
 <!-- source: facts_extracted_v2.md §"Network Troubleshooting" -->
 
-    Expect a timeout / `egress blocked`, not a `200`.
+    Expect a timeout / `egress blocked`, not `reachable`. (A debug pod *without* the
+    `part-of: orders` label is **not** selected by the policy and would reach the internet
+    fine — proof that the block is scoped by the NetworkPolicy's pod selector.)
 
-12. **Test DNS** from the same pod:
+12. **Test DNS** the same way — resolving a name is itself egress (to CoreDNS in `kube-system`),
+    so a blanket egress deny takes DNS out alongside the internet:
 
     ```bash
-    kubectl -n orders exec "$POD" -- nslookup example.com || echo "dns blocked"
-    kubectl -n orders exec "$POD" -- nslookup orders-api.orders.svc.cluster.local || echo "cluster dns blocked"
+    kubectl -n orders run dnstest --rm -i --restart=Never \
+      --labels="app.kubernetes.io/part-of=orders" \
+      --image=public.ecr.aws/docker/library/python:3.12-slim -- \
+      python -c "import socket; print(socket.gethostbyname('example.com'))" \
+      || echo "dns blocked"
     ```
 <!-- source: facts_extracted_v2.md §"DNS Troubleshooting" -->
 
-    Both lookups fail — the pod cannot even reach CoreDNS (`kube-dns`) in `kube-system`.
+    The lookup fails — a pod under the default-deny cannot even reach CoreDNS (`kube-dns`) in `kube-system`.
 
 > **Expected Result:** From inside the pod, both internet egress and DNS resolution fail. The application code is fine; *something at the network-policy layer* is dropping the pod's outbound traffic — including the traffic it needs to reach CoreDNS.
 
@@ -254,15 +273,17 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
 
     > **Cleaner alternative:** because the default-deny was applied by the Helm chart, you can also re-deploy the application with the policy turned off — `./deploy_app.sh` reads `network_policy_default_deny` from Terraform, so re-applying `scenario=healthy` (or running the deploy with `--set networkPolicy.defaultDeny=false`) removes the default-deny entirely. The targeted allow above is the better *incident-response* habit (restore service with least change); the redeploy is the better *configuration* fix.
 
-16. **Re-test** from inside a pod:
+16. **Re-test** from a policy-selected pod (same labelled throwaway pod as before):
 
     ```bash
-    kubectl -n orders exec "$POD" -- nslookup example.com
-    kubectl -n orders exec "$POD" -- curl -m5 -sS https://example.com -o /dev/null -w '%{http_code}\n'
+    kubectl -n orders run nettest --rm -i --restart=Never \
+      --labels="app.kubernetes.io/part-of=orders" \
+      --image=public.ecr.aws/docker/library/python:3.12-slim -- \
+      python -c "import socket; print('dns', socket.gethostbyname('example.com')); socket.setdefaulttimeout(5); socket.create_connection(('example.com',443)); print('egress reachable')"
     ```
 <!-- source: facts_extracted_v2.md §"DNS Troubleshooting" -->
 
-> **Expected Result:** DNS resolves and `curl` returns `200`. Within a minute the in-cluster checker publishes again and the **`Pod → internet`** and **`Pod → DNS`** tiles turn **green**. All three Lab 2 tiles are now green — close the P2 incident in ServiceNow with both root causes recorded: node group scaled to zero, and a default-deny egress NetworkPolicy with no allow rule.
+> **Expected Result:** DNS resolves and the connection reports `egress reachable`. Within a minute the in-cluster checker publishes again and the **`Pod → internet`** and **`Pod → DNS`** tiles turn **green**. All three Lab 2 tiles are now green — close the P2 incident in ServiceNow with both root causes recorded: node group scaled to zero, and a default-deny egress NetworkPolicy with no allow rule.
 
 ---
 

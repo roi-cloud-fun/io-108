@@ -17,22 +17,13 @@ resource "aws_security_group" "aurora" {
   description = "IO-108 Aurora -- Postgres from EKS nodes and report Lambda only"
   vpc_id      = aws_vpc.main.id
 
-  ingress {
-    description     = "Postgres from EKS cluster security group (nodes/pods)"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_eks_cluster.main.vpc_config[0].cluster_security_group_id]
-  }
-
-  ingress {
-    description     = "Postgres from report-generator Lambda"
-    from_port       = 5432
-    to_port         = 5432
-    protocol        = "tcp"
-    security_groups = [aws_security_group.lambda.id]
-  }
-
+  # NOTE: NO inline ingress blocks here. All Aurora ingress is expressed as
+  # standalone aws_vpc_security_group_ingress_rule resources (below + in
+  # rogue.tf / healthcheck.tf). Mixing inline ingress with standalone rule
+  # resources makes this SG REVOKE the standalone rules on every apply (they are
+  # not in the inline set), so they flap create/destroy -- and a tag update
+  # landing mid-flap leaves a rule destroyed, silently cutting the rogue's or the
+  # health-checker's Aurora path. Keeping every ingress rule standalone avoids it.
   egress {
     from_port   = 0
     to_port     = 0
@@ -41,6 +32,36 @@ resource "aws_security_group" "aurora" {
   }
 
   tags = { Name = "${local.name_prefix}-aurora-sg" }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "aurora_from_eks" {
+  security_group_id            = aws_security_group.aurora.id
+  referenced_security_group_id = aws_eks_cluster.main.vpc_config[0].cluster_security_group_id
+  from_port                    = 5432
+  to_port                      = 5432
+  ip_protocol                  = "tcp"
+  description                  = "Postgres from EKS cluster security group (nodes/pods)"
+
+  tags = { Name = "${local.name_prefix}-aurora-from-eks" }
+
+  lifecycle {
+    ignore_changes = [tags, tags_all]
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "aurora_from_lambda" {
+  security_group_id            = aws_security_group.aurora.id
+  referenced_security_group_id = aws_security_group.lambda.id
+  from_port                    = 5432
+  to_port                      = 5432
+  ip_protocol                  = "tcp"
+  description                  = "Postgres from report-generator Lambda"
+
+  tags = { Name = "${local.name_prefix}-aurora-from-lambda" }
+
+  lifecycle {
+    ignore_changes = [tags, tags_all]
+  }
 }
 
 resource "aws_rds_cluster" "main" {

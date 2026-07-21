@@ -173,15 +173,24 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
 
 ## Task 4: Fix the Throttle and Confirm Green
 
-8. **Raise** the reserved concurrency so the function can run. From the Lambda console: **Configuration -> Concurrency -> Edit -> Reserve concurrency** and set it to **5**. Or from the CLI:
+8. **Remove** the concurrency cap so the function can draw from the account pool again. This is
+    the most reliable fix and works on any account:
 
     ```bash
-    aws lambda put-function-concurrency --function-name "$REPORT_FN" \
-      --reserved-concurrent-executions 5 --region "$REGION"
+    aws lambda delete-function-concurrency --function-name "$REPORT_FN" --region "$REGION"
     ```
 <!-- source: Lab_3_narrative.md §"aws lambda put-function-concurrency" -->
 
-    > Setting a small positive reserve (5) both fixes the throttle and keeps a sensible cap. Alternatively `aws lambda delete-function-concurrency` removes the limit entirely and lets the function draw from the account pool. Either restores capacity.
+    > **Why remove rather than reserve a small number?** You *could* instead set a small
+    > positive reserve with `aws lambda put-function-concurrency --reserved-concurrent-executions
+    > N`. But reserving N requires the account to have at least `N + 10` unreserved concurrency
+    > available (AWS keeps a floor of 10 unreserved). **On a capped training account whose total
+    > concurrency limit is 10, any positive reserve fails** with
+    > `InvalidParameterValueException: ... decreases account's UnreservedConcurrentExecution below
+    > its minimum value of [10]`. Removing the reservation always works and is the right call
+    > here; use a positive reserve only when the account has headroom and you want a cap. From
+    > the console the equivalent is **Configuration → Concurrency → Edit → Use unreserved account
+    > concurrency**.
 
 9. **Trigger** a fresh run rather than waiting for the next schedule:
 

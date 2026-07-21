@@ -130,6 +130,16 @@ resource "aws_vpc_security_group_ingress_rule" "aurora_from_rogue" {
   description                  = "Postgres from the ROGUE instance (security through-line)"
 
   tags = { Name = "${local.name_prefix}-aurora-from-rogue" }
+
+  # Do NOT let a scenario switch update this rule's Scenario tag: an in-place tag
+  # update on a standalone SG ingress rule intermittently fails ("updating tags
+  # for EC2 Security Group Ingress Rule"), and the failed apply leaves the rule
+  # DESTROYED -- which silently severs the rogue's Aurora path (Lab 4 trace finds
+  # nothing) and aborts the apply before later resources (e.g. the Lab 5
+  # capstone misroute) are created. Ignoring tag drift keeps the rule stable.
+  lifecycle {
+    ignore_changes = [tags, tags_all]
+  }
 }
 
 # ----------------------------------------------------------------------------

@@ -46,6 +46,14 @@ def _init_schema():
             "created_at timestamptz default now())"
         )
         log.info("schema ready on %s/%s", DB_HOST, DB_NAME)
+    except Exception as exc:  # noqa: BLE001
+        # If DB_HOST is a read-only target (e.g. the app is misconfigured to the
+        # Aurora READER endpoint -- the Lab 4 fault), DDL fails with
+        # "cannot execute CREATE TABLE in a read-only transaction". Do NOT crash
+        # the pod: log and continue so the app stays UP, serves reads, and
+        # surfaces the read-only error on each write (POST /orders) -- which is
+        # exactly the "reachable but not writable" symptom Lab 4 teaches.
+        log.warning("schema init skipped -- DB target may be read-only: %s", exc)
     finally:
         conn.close()
 

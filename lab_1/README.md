@@ -211,20 +211,35 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
 
     In a real investigation you would not have these as outputs — Task 6 shows how you would *discover* them. Capture them now so you can cross-check your findings.
 
-12. **Query CloudTrail** for activity attributable to the rogue principal. Look for the role assuming credentials and reading the Aurora secret:
+12. **Query CloudTrail** for who has been reading the Aurora master secret. Both the
+    legitimate app roles and the rogue call `GetSecretValue`, and they all show up in the
+    `Username` field as generic `botocore-session-...` assumed-role sessions — so you cannot
+    tell them apart from that column. The real attribution lives one level deeper, in each
+    event's `userIdentity.sessionContext.sessionIssuer.userName` (the ROLE behind the
+    session). Pull the full events and tally the calling roles:
 
     ```bash
     aws cloudtrail lookup-events \
       --region $REGION \
       --lookup-attributes AttributeKey=EventName,AttributeValue=GetSecretValue \
-      --max-results 20 \
-      --query 'Events[].{Time:EventTime,User:Username,Name:EventName}' --output table
+      --max-results 50 \
+      --query 'Events[].CloudTrailEvent' --output json \
+    | jq -r '.[] | fromjson | .userIdentity.sessionContext.sessionIssuer.userName' \
+    | sort | uniq -c | sort -rn
     ```
 <!-- source: Module_2_narrative.md §"CloudTrail Event Structure" -->
 
-    Also look at `AssumeRole` events and filter for the rogue role name (`io108-$SID-rogue-actor`). CloudTrail shows you **who** acted, **when**, and **from where** — the attribution backbone of any incident.
+    Among the expected app roles (`io108-$SID-orders-api-role`, `-health-checker-role`,
+    `-report-lambda-role`) you will find **`io108-$SID-rogue-actor`** — a principal that has
+    no business reading the database credentials at all. CloudTrail shows you **who** acted,
+    **when**, and **from where** — the attribution backbone of any incident.
 
-> **Expected Result:** You can point to CloudTrail entries where the **rogue-actor** principal read the Aurora master secret on a roughly one-minute cadence — activity the legitimate `orders-api` role never performs. This is your evidence that a second, unauthorized principal is using stolen credentials against your database.
+> **Expected Result:** The role tally includes **`io108-$SID-rogue-actor`** reading the Aurora
+> master secret — an identity that should never touch it. The legitimate app roles read it
+> constantly (every few seconds), so the rogue's reads are a low-frequency minority in the
+> list (it re-reads roughly every few minutes); the *identity*, not the volume, is the tell.
+> This is your evidence that a second, unauthorized principal is using stolen credentials
+> against your database.
 
 ---
 

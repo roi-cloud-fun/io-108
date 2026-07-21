@@ -129,11 +129,13 @@ resource "aws_eks_node_group" "main" {
     max_size     = 3
   }
 
-  # The student edits scaling_config out-of-band (CLI/console) to fix Lab 2;
-  # don't let a later `terraform apply` revert their remediation.
-  lifecycle {
-    ignore_changes = [scaling_config[0].desired_size]
-  }
+  # NOTE: desired_size is deliberately terraform-managed (NOT under
+  # ignore_changes) so `scenario=lab2` actually scales the group to 0 and
+  # `scenario=healthy`/any other scenario scales it back to 2. The student's
+  # Lab 2 remediation is the EKS API call `aws eks update-nodegroup-config
+  # --scaling-config ...desiredSize=2`; that fix holds for the rest of the lab.
+  # (Re-running `terraform apply` while still on scenario=lab2 would re-inject
+  # the fault -- that is expected, not a regression.)
 
   depends_on = [aws_iam_role_policy_attachment.eks_nodes]
 }

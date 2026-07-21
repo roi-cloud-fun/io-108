@@ -128,6 +128,13 @@ resource "aws_vpc_security_group_ingress_rule" "aurora_from_health_checker" {
   description                  = "Postgres from the health-checker Lambda"
 
   tags = { Name = "${local.name_prefix}-aurora-from-health-checker" }
+
+  # See rogue.tf aurora_from_rogue: a scenario-switch tag update on a standalone
+  # SG ingress rule can fail and leave the rule destroyed, cutting the
+  # health-checker's Aurora path (false-red aurora_* tiles). Keep it tag-stable.
+  lifecycle {
+    ignore_changes = [tags, tags_all]
+  }
 }
 
 resource "aws_iam_role" "health_checker" {

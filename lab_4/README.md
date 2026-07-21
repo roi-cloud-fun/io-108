@@ -156,18 +156,32 @@ Run from a local clone or AWS CloudShell.
 
 ## Task 3: Repoint the App to the Writer Endpoint and Confirm Green
 
-5. **Repoint** the running application at the cluster (writer) endpoint by overriding the chart's `env.dbHost` value:
+5. **Repoint the stack at the writer (cluster) endpoint.** The application's DB target is set
+    from Terraform — `deploy_app.sh` reads `app_db_host` — and the health board's
+    `aurora_writable` probe checks that *same* Terraform-intended target. So the durable fix
+    that also turns the tile green is to correct the wiring in Terraform and redeploy, returning
+    the DB target from the reader to the cluster/writer endpoint:
 
     ```bash
-    helm upgrade orders charts/orders --namespace orders --reuse-values \
-      --set env.dbHost="$WRITER"
+    terraform apply -var student_id=$SID -var scenario=healthy -auto-approve
+    ./deploy_app.sh
     ```
 <!-- source: Lab_4_narrative.md §"use cluster endpoint" -->
 
-6. **Restart** the deployment so pods reconnect to the new host:
+    This points `app_db_host` back at the cluster (writer) endpoint for both the app and the
+    probe. (The rogue is always-on and unaffected — you contain it in Task 5.)
+
+    > **Immediate mitigation vs. durable fix.** In a live incident your first move might be to
+    > hot-patch the running pods to stop the bleeding —
+    > `helm upgrade orders charts/orders --namespace orders --reuse-values --set env.dbHost="$WRITER"`
+    > then `kubectl -n orders rollout restart deploy/orders-api` — which restores writes within
+    > seconds. That is a valid first action, but it only changes the live pods; the board's
+    > `aurora_writable` probe follows the Terraform-declared DB target, so reconcile Terraform
+    > (above) to actually close the incident on the board.
+
+6. **Restart** the deployment if you used the hot-patch mitigation, so pods reconnect:
 
     ```bash
-    kubectl -n orders rollout restart deploy/orders-api
     kubectl -n orders rollout status deploy/orders-api --timeout=180s
     ```
 <!-- source: Lab_4_narrative.md §"restart the pods so they pick up the new configuration" -->
@@ -209,7 +223,7 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has opene
     ```
 <!-- source: Module_3_narrative.md §"the source address on the query is the tell" -->
 
-    Compare the `client_addr` values against the rogue IP you captured (`$ROGUE_IP`). The rogue's source IP will appear, running a benign-looking `SELECT 1` — exactly the kind of low-and-slow access that hides in plain sight.
+    Compare the `client_addr` values against the rogue IP you captured (`$ROGUE_IP`). The rogue's source IP will appear holding a long-lived, benign-looking idle session (a `pg_sleep` that keeps one connection open) — exactly the kind of low-and-slow access that hides in plain sight.
 
 9. **Corroborate with Performance Insights.** In the **RDS console -> Performance Insights**, select your writer instance, and group the top load **by host / client**. The rogue's host shows up as a contributor distinct from the application pods. This is the GUI view of the same evidence — useful when you cannot get a psql session.
 
