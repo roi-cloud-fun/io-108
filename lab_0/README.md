@@ -54,8 +54,8 @@ By the end of this lab, you will:
 2. **Set** two shell variables you will reuse all day. Replace `sNN` with the student id your instructor assigned (for example `s07`):
 
     ```bash
-    export SID=sNN
-    export REGION=us-east-1
+    export SID=sNN                # your assigned student id, e.g. s01
+    export REGION=us-east-1       # YOUR assigned region, e.g. us-east-2 / eu-west-1 -- change this
     ```
 
     Your `student_id` must be lowercase alphanumeric, 2–12 characters. Every resource you own is named `io108-$SID-...`, so this prefix is how you find your stack among the cohort's.
@@ -82,20 +82,30 @@ By the end of this lab, you will:
     cd lab_environment/lab_env_student
     ```
 
-5. **Copy** the example variables file and set your `student_id`:
+5. **Copy** the example variables file and set BOTH your `student_id` and your `region`. Setting
+   them here once means every later command is just `-var scenario=...` (no need to retype them):
 
     ```bash
     cp terraform.tfvars.example terraform.tfvars
-    # edit terraform.tfvars: set student_id = "sNN" (your id) and region
+    # edit terraform.tfvars:
+    #   student_id = "sNN"          <- your id
+    #   region     = "us-east-2"    <- YOUR assigned region
     ```
 
-6. **Initialize** Terraform, then **apply** the **healthy** baseline. The `scenario` variable defaults to `healthy`, so no fault is injected — this is the green starting point:
+6. **Initialize** Terraform **against your remote state**, then **plan** and **apply** the
+   **healthy** baseline. Your state lives in a shared S3 bucket under your own key, so pass it at
+   init time. The `scenario` variable defaults to `healthy` — the green starting point:
 
     ```bash
-    terraform init
-    terraform apply -var student_id=$SID -var scenario=healthy
+    terraform init -backend-config="key=io108/$SID/terraform.tfstate"
+    terraform plan  -var scenario=healthy    # student_id + region come from terraform.tfvars
+    terraform apply -var scenario=healthy
     ```
     <!-- source: course_outline_v3.md §"Lab 0" -->
+
+    > **Already deployed for you?** If your instructor pre-provisioned your stack, `terraform
+    > plan` will report **"No changes"** after `init` — that confirms your clone is correctly
+    > wired to your existing stack. Skip the apply and go straight to the incident labs.
 
     Review the plan and type **yes** to confirm. This provisions your VPC (public/private subnets, NAT), the EKS cluster and managed node group, the Aurora cluster, the reporting Lambda and Step Functions workflow, the S3 report and sink buckets, the health-checker Lambda, the alarms, and **both** CloudWatch dashboards.
 

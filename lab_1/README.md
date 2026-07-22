@@ -35,7 +35,8 @@ You open a **P2** incident in **ServiceNow** — the service is degraded but the
 
 ```bash
 cd lab_environment/lab_env_student
-terraform apply -var student_id=$SID -var scenario=lab1
+terraform plan  -var scenario=lab1     # student_id + region come from your terraform.tfvars (Lab 0)
+terraform apply -var scenario=lab1
 ```
 <!-- source: course_outline_v3.md §"Lab 1: IAM Access Denial Investigation" -->
 
@@ -63,7 +64,7 @@ By the end of this lab, you will:
 
     ```bash
     export SID=sNN
-    export REGION=us-east-1
+    export REGION=us-east-1       # <- CHANGE to YOUR assigned region (e.g. us-east-2, eu-west-1)
     cd lab_environment/lab_env_student
     export IRSA_ROLE=$(terraform output -raw irsa_role_arn)
     export SECRET_ARN=$(terraform output -raw aurora_master_secret_arn)

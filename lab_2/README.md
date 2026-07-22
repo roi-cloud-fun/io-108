@@ -33,7 +33,8 @@ You open a **P2** incident in **ServiceNow**: the workload is down, but the blas
 
 ```bash
 cd lab_environment/lab_env_student
-terraform apply -var student_id=$SID -var scenario=lab2
+terraform plan  -var scenario=lab2     # student_id + region come from your terraform.tfvars (Lab 0)
+terraform apply -var scenario=lab2
 ./deploy_app.sh
 ```
 <!-- source: course_outline_v3.md §"Lab 2: EKS Pod Failure Investigation" -->
@@ -66,7 +67,7 @@ By the end of this lab, you will:
 
     ```bash
     export SID=sNN
-    export REGION=us-east-1
+    export REGION=us-east-1       # <- CHANGE to YOUR assigned region (e.g. us-east-2, eu-west-1)
     cd lab_environment/lab_env_student
     export CLUSTER=$(terraform output -raw cluster_name)
     aws eks update-kubeconfig --name "$CLUSTER" --region $REGION

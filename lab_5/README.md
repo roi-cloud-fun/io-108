@@ -66,7 +66,8 @@ Run from a local clone or AWS CloudShell.
 
     ```bash
     cd lab_environment/lab_env_student
-    terraform apply -var="student_id=s01" -var="scenario=lab5" -auto-approve
+    terraform plan  -var scenario=lab5                       # student_id + region from terraform.tfvars (Lab 0)
+    terraform apply -var scenario=lab5 -auto-approve
     ./deploy_app.sh
     ```
 <!-- source: course_outline_v3.md §"Lab 5" -->

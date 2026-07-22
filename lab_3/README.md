@@ -58,7 +58,8 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
 
     ```bash
     cd lab_environment/lab_env_student
-    terraform apply -var="student_id=s01" -var="scenario=lab3" -auto-approve
+    terraform plan  -var scenario=lab3                       # student_id + region from terraform.tfvars (Lab 0)
+    terraform apply -var scenario=lab3 -auto-approve
     ```
 <!-- source: course_outline_v3.md §"using Terraform and verify its health" -->
 
