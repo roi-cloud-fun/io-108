@@ -208,6 +208,10 @@ Run from a local clone or AWS CloudShell.
       psql -h "$WRITER" -U "$PGUSER" -d "$PGDATABASE" \
       -c "CREATE TABLE IF NOT EXISTS lab4_writecheck(id serial, ts timestamptz default now()); INSERT INTO lab4_writecheck DEFAULT VALUES RETURNING id;"
     ```
+
+    ```bash
+    \q then Enter to exit psql
+    ```
 <!-- source: Lab_4_narrative.md §"Submit test order, verify processing" -->
 
     Expected: the `INSERT` returns a new `id` - writes work.
