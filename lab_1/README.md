@@ -35,8 +35,13 @@ You open a **P2** incident in **ServiceNow** — the service is degraded but the
 
 ```bash
 cd lab_environment/lab_env_student
+cp terraform.tfvars.example terraform.tfvars
+nano or vi terraform.tfvars
+set your region and sXX (current student ID)
+
 terraform init
 Enter our state folder path: io108/sXX/terraform.tfstate
+
 terraform plan  -var scenario=lab1     # student_id + region come from your terraform.tfvars (Lab 0)
 terraform apply -var scenario=lab1
 ```
