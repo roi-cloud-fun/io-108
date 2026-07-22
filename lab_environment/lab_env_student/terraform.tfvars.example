@@ -6,7 +6,7 @@ region     = "us-east-1"
 
 # Defaults below rarely need changing in class:
 # vpc_cidr                   = "10.42.0.0/16"
-# eks_version                = "1.31"
+# eks_version                = "1.35"   # keep on an EKS standard-support version (1.31 is extended support = pricier)
 # node_instance_type         = "t3.medium"
 # db_instance_class          = "db.t4g.medium"
 # report_schedule_expression = "rate(5 minutes)"
