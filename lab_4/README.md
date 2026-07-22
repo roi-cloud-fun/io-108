@@ -238,6 +238,10 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has opene
         WHERE client_addr IS NOT NULL
         ORDER BY backend_start DESC;"
     ```
+
+    ```bash
+    \q then Enter to exit psql
+    ```
 <!-- source: Module_3_narrative.md §"the source address on the query is the tell" -->
 
     Compare the `client_addr` values against the rogue IP you captured (`$ROGUE_IP`). The rogue's source IP will appear holding a long-lived, benign-looking idle session (a `pg_sleep` that keeps one connection open) — exactly the kind of low-and-slow access that hides in plain sight.
