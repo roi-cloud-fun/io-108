@@ -21,6 +21,9 @@ states:*              # Step Functions — the report workflow (REQUIRED, often 
 events:*              # EventBridge — schedules + fan-out (REQUIRED, often missing)
 ssm:GetParameter      # rogue.tf looks up the latest AL2023 AMI via a public SSM parameter
                       #   (ssm:* if you also want SSM Session Manager into the rogue box)
+tiros:CreateQuery     # VPC Reachability Analyzer (Lab 5 / network demos) runs on the internal
+                      #   "tiros" service; without it, analyses fail "not authorized to perform
+                      #   tiros:CreateQuery". Use tiros:* to cover CreateQuery + GetQueryAnswer.
 ```
 
 A `Deny` on `organizations:*`, `account:*`, `bedrock:*` is fine and does not affect the labs.
@@ -53,6 +56,7 @@ it (e.g. as an inline policy on the attendees group):
         "events:*",
         "scheduler:*",
         "ssm:*",
+        "tiros:*",
         "cloudtrail:*",
         "config:*"
       ],

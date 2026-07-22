@@ -14,6 +14,12 @@ variable "student_ids" {
   default     = ["s01", "s02", "s03", "s04", "s05", "s06", "s07", "s08"]
 }
 
+variable "student_regions" {
+  description = "Optional per-student region for their LAB STACK (e.g. {s01=\"us-east-1\", s02=\"us-west-2\", ...}). Put each student in their own region so dashboards/Container Insights don't collide in one region. Any id not listed falls back to var.region. The lab HOST itself stays in var.region regardless -- it drives the student's region via `terraform apply -var region=...`, baked into the host's welcome note."
+  type        = map(string)
+  default     = {}
+}
+
 variable "instance_type" {
   description = "Lab host size. t3.small is plenty -- it only runs terraform/kubectl/helm, not the workload."
   type        = string

@@ -109,12 +109,39 @@ resource "aws_iam_role_policy_attachment" "eks_nodes" {
   policy_arn = each.value
 }
 
+# Launch template used ONLY to put a Name tag on the worker EC2 instances + their
+# EBS volumes. EKS managed node groups don't tag the underlying instances by
+# default, so they show up blank in the console. EKS still injects the AMI and
+# bootstrap; we only supply tag_specifications (no image_id / instance type here,
+# so ami_type + instance_types on the node group still drive those).
+resource "aws_launch_template" "nodes" {
+  name_prefix = "${local.name_prefix}-nodes-"
+
+  tag_specifications {
+    resource_type = "instance"
+    tags          = { Name = "${local.name_prefix}-node" }
+  }
+
+  tag_specifications {
+    resource_type = "volume"
+    tags          = { Name = "${local.name_prefix}-node" }
+  }
+
+  tags = { Name = "${local.name_prefix}-nodes-lt" }
+}
+
 resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = "${local.name_prefix}-nodes"
   node_role_arn   = aws_iam_role.eks_nodes.arn
   subnet_ids      = aws_subnet.private[*].id
   instance_types  = [var.node_instance_type]
+  ami_type        = "AL2023_x86_64_STANDARD"
+
+  launch_template {
+    id      = aws_launch_template.nodes.id
+    version = aws_launch_template.nodes.latest_version
+  }
 
   # Lab 2 (break_eks_node_capacity): scale the managed node group to ZERO nodes
   # so every pod -- orders-api, worker, coredns -- goes Pending / Unschedulable

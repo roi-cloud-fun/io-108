@@ -179,17 +179,18 @@ resource "aws_instance" "lab_host" {
     sudo -u ec2-user git clone ${var.repo_url} /home/ec2-user/io-108
 
     cat > /home/ec2-user/README-LAB-HOST.txt <<'HINT'
-    IO-108 lab host for student ${each.key}.
+    IO-108 lab host for student ${each.key}.  Your assigned region: ${lookup(var.student_regions, each.key, var.region)}
 
     Run EVERYTHING from here (not CloudShell) so your EKS cluster grants this host kubectl access:
 
       cd ~/io-108/lab_environment/lab_env_student
       terraform init
-      terraform apply -var student_id=${each.key}     # ~15-20 min, EKS is the long pole
+      terraform apply -var student_id=${each.key} -var region=${lookup(var.student_regions, each.key, var.region)}   # ~15-20 min, EKS is the long pole
       ./deploy_app.sh                                  # also runs: aws eks update-kubeconfig --name io108-${each.key}-eks
       ./verify.sh                                      # expect ALL CHECKS PASSED (except the 2 rogue tiles)
 
-    Then follow lab_0 .. lab_5 READMEs. Board: CloudWatch > Dashboards > io108-${each.key}-incident-board
+    All lab commands run in region ${lookup(var.student_regions, each.key, var.region)} -- pass -var region=${lookup(var.student_regions, each.key, var.region)} on every terraform apply.
+    Then follow lab_0 .. lab_5 READMEs. Board: CloudWatch (region ${lookup(var.student_regions, each.key, var.region)}) > Dashboards > io108-${each.key}-incident-board
     HINT
     chown -R ec2-user:ec2-user /home/ec2-user/io-108 /home/ec2-user/README-LAB-HOST.txt
 
