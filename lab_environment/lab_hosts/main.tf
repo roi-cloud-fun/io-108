@@ -163,8 +163,8 @@ resource "aws_instance" "lab_host" {
     unzip -q -o /tmp/awscliv2.zip -d /tmp
     /tmp/aws/install --update
 
-    # Terraform
-    curl -fsSL https://releases.hashicorp.com/terraform/1.9.8/terraform_1.9.8_linux_amd64.zip -o /tmp/tf.zip
+    # Terraform (>= 1.10 required by the stack's versions.tf + S3 backend)
+    curl -fsSL https://releases.hashicorp.com/terraform/1.11.2/terraform_1.11.2_linux_amd64.zip -o /tmp/tf.zip
     unzip -q -o /tmp/tf.zip -d /usr/local/bin/
     chmod +x /usr/local/bin/terraform
 

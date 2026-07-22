@@ -13,6 +13,14 @@
 terraform {
   required_version = ">= 1.10"
 
+  # Central per-student remote state. bucket + region are fixed for the class;
+  # each student passes their own key at init:
+  #   terraform init -backend-config="key=io108/<student_id>/terraform.tfstate"
+  backend "s3" {
+    bucket = "io108-tfstate-587721667383"
+    region = "us-east-1"
+  }
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
