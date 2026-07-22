@@ -172,9 +172,13 @@ Run from a local clone or AWS CloudShell.
     the DB target from the reader to the cluster/writer endpoint:
 
     ```bash
-    terraform apply -var scenario=healthy -auto-approve
+    terraform apply -var scenario=healthy -auto-approve    
+    ```
+
+    ```bash
     ./deploy_app.sh
     ```
+    
 <!-- source: Lab_4_narrative.md §"use cluster endpoint" -->
 
     This points `app_db_host` back at the cluster (writer) endpoint for both the app and the
