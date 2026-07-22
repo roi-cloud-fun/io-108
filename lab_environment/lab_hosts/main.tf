@@ -181,18 +181,23 @@ resource "aws_instance" "lab_host" {
     cat > /home/ec2-user/README-LAB-HOST.txt <<'HINT'
     IO-108 lab host for student ${each.key}.  Your assigned region: ${lookup(var.student_regions, each.key, var.region)}
 
-    Run EVERYTHING from here (not CloudShell) so your EKS cluster grants this host kubectl access:
+    Run EVERYTHING from here. Your stack is already deployed (Lab 0 done); connect to your
+    remote state and run the incident labs:
 
       cd ~/io-108/lab_environment/lab_env_student
-      terraform init
-      terraform apply -var student_id=${each.key} -var region=${lookup(var.student_regions, each.key, var.region)}   # ~15-20 min, EKS is the long pole
-      ./deploy_app.sh                                  # also runs: aws eks update-kubeconfig --name io108-${each.key}-eks
-      ./verify.sh                                      # expect ALL CHECKS PASSED (except the 2 rogue tiles)
+      cp terraform.tfvars.example terraform.tfvars     # set student_id=${each.key}, region=${lookup(var.student_regions, each.key, var.region)}
+      terraform init -backend-config="key=io108/${each.key}/terraform.tfstate"
+      terraform plan  -var scenario=lab1               # then: terraform apply -var scenario=lab1
+      ./deploy_app.sh                                  # for labs that need it (2/4/5)
 
-    All lab commands run in region ${lookup(var.student_regions, each.key, var.region)} -- pass -var region=${lookup(var.student_regions, each.key, var.region)} on every terraform apply.
-    Then follow lab_0 .. lab_5 READMEs. Board: CloudWatch (region ${lookup(var.student_regions, each.key, var.region)}) > Dashboards > io108-${each.key}-incident-board
+    This host and your stack are BOTH in ${lookup(var.student_regions, each.key, var.region)};
+    AWS_DEFAULT_REGION is already set to it, so no --region needed.
+    Board: CloudWatch > Dashboards > io108-${each.key}-incident-board
     HINT
     chown -R ec2-user:ec2-user /home/ec2-user/io-108 /home/ec2-user/README-LAB-HOST.txt
+
+    # Default the student's region so aws / kubectl "just work" (host IS in this region).
+    echo "export AWS_DEFAULT_REGION=${lookup(var.student_regions, each.key, var.region)}" >> /home/ec2-user/.bashrc
 
     # Ready marker (SSM can grep this to confirm bootstrap finished)
     echo "io108 lab host ready for ${each.key}" > /home/ec2-user/BOOTSTRAP_DONE
