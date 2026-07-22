@@ -109,7 +109,7 @@ Run from a local clone or AWS CloudShell.
 
 ## Task 2: Diagnose the Network Blackhole (Flow Logs + Reachability Analyzer)
 
-3. **Query VPC Flow Logs** for the partner path. The misroute sends partner-CIDR traffic to the internet gateway; from the private subnets (no public IPs) the SYN leaves but nothing returns — an asymmetric blackhole. In **CloudWatch Logs Insights**, select log group `$FLOW_LG` and run:
+3. **Query VPC Flow Logs** for the partner path. The misroute sends partner-CIDR traffic to the internet gateway; from the private subnets (no public IPs) the SYN leaves but nothing returns — an asymmetric blackhole. In **Log Analytics**, select log group `$FLOW_LG` and run:
 
     ```
     fields @timestamp, srcAddr, dstAddr, action, bytes
