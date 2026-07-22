@@ -72,7 +72,6 @@ By the end of this lab, you will:
     ```bash
     export SID=sNN
     export REGION=us-east-1       # <- CHANGE to YOUR assigned region (e.g. us-east-2, eu-west-1)
-    cd lab_environment/lab_env_student
     export IRSA_ROLE=$(terraform output -raw irsa_role_arn)
     export SECRET_ARN=$(terraform output -raw aurora_master_secret_arn)
     export REPORTS_BUCKET=$(terraform output -raw reports_bucket)
