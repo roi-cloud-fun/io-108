@@ -146,6 +146,10 @@ Run from a local clone or AWS CloudShell.
       --env="PGPASSWORD=$PGPASSWORD" -- \
       psql -h "$WRITER" -U "$PGUSER" -d "$PGDATABASE" -c "SELECT pg_is_in_recovery();"
     ```
+
+    ```bash
+    \q then Enter to exit psql
+    ```
 <!-- source: Module_3_narrative.md §"always tracks the current primary" -->
 
     Expected: returns **`f`** (false) — the cluster endpoint always points at the current writer.
