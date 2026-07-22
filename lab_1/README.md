@@ -229,7 +229,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     aws cloudtrail lookup-events \
       --region $REGION \
       --lookup-attributes AttributeKey=EventName,AttributeValue=GetSecretValue \
-      --max-results 50 \
+      --max-items 400 \
       --query 'Events[].CloudTrailEvent' --output json \
     | jq -r '.[] | fromjson | .userIdentity.sessionContext.sessionIssuer.userName' \
     | sort | uniq -c | sort -rn
