@@ -35,6 +35,7 @@ You open a **P2** incident in **ServiceNow**: the workload is down, but the blas
 cd lab_environment/lab_env_student
 terraform plan  -var scenario=lab2     # student_id + region come from your terraform.tfvars (Lab 0)
 terraform apply -var scenario=lab2
+chmod +x ./deploy_app.sh
 ./deploy_app.sh
 ```
 <!-- source: course_outline_v3.md §"Lab 2: EKS Pod Failure Investigation" -->
