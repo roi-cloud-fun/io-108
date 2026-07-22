@@ -109,7 +109,15 @@ Run from a local clone or AWS CloudShell.
 
 ## Task 2: Diagnose the Network Blackhole (Flow Logs + Reachability Analyzer)
 
-3. **Query VPC Flow Logs** for the partner path. The misroute sends partner-CIDR traffic to the internet gateway; from the private subnets (no public IPs) the SYN leaves but nothing returns — an asymmetric blackhole. In **Log Analytics**, select log group `$FLOW_LG` and run:
+3. **Generate traffic toward the partner path, then query VPC Flow Logs.** Nothing in the stack routinely sends packets to the partner CIDR, so Flow Logs have nothing to match until you drive some traffic at it. From a pod in the private subnet, attempt a connection to an address in the partner range — the misroute sends it to the internet gateway, and from a private (no-public-IP) subnet the SYN leaves but nothing returns, so it times out. That timeout **is** the symptom:
+
+    ```bash
+    kubectl -n orders run nettest --rm -i --restart=Never \
+      --image=public.ecr.aws/docker/library/python:3.12-slim -- \
+      python -c "import socket; socket.setdefaulttimeout(8); socket.create_connection(('203.0.113.10',443))" || echo "blackholed (expected)"
+    ```
+
+    Run it two or three times if you want more records. Wait ~1–2 min for Flow Log delivery, then in **Log Analytics**, select log group `$FLOW_LG` and run:
 
     ```
     fields @timestamp, srcAddr, dstAddr, action, bytes
@@ -118,7 +126,7 @@ Run from a local clone or AWS CloudShell.
     | limit 50
     ```
 
-    You will see outbound attempts toward the partner CIDR with no corresponding return traffic (or `REJECT` records) — the signature of a one-way path.
+    You will now see outbound records from your pod (`srcAddr`) toward the partner CIDR (`dstAddr` in `203.0.113.x`) with **no corresponding return traffic** — the asymmetric, one-way signature of a routing blackhole. (A security-group or NACL block would instead show `REJECT` records; here the packets simply leave via the wrong hop and never come back.)
 
 4. **Run VPC Reachability Analyzer** to name the broken hop. In the **VPC console -> Reachability Analyzer -> Create and analyze path**:
 
