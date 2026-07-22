@@ -172,7 +172,7 @@ Run from a local clone or AWS CloudShell.
     the DB target from the reader to the cluster/writer endpoint:
 
     ```bash
-    terraform apply -var student_id=$SID -var scenario=healthy -auto-approve
+    terraform apply -var scenario=healthy -auto-approve
     ./deploy_app.sh
     ```
 <!-- source: Lab_4_narrative.md §"use cluster endpoint" -->
