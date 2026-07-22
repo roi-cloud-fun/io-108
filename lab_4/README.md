@@ -130,6 +130,10 @@ Run from a local clone or AWS CloudShell.
       --env="PGPASSWORD=$PGPASSWORD" -- \
       psql -h "$READER" -U "$PGUSER" -d "$PGDATABASE" -c "SELECT pg_is_in_recovery();"
     ```
+
+    ```bash
+    \q then Enter to exit psql
+    ```
 <!-- source: Module_3_narrative.md §"read replica" -->
 
     Expected: `pg_is_in_recovery` returns **`t`** (true) — this connection is on a read replica, which is read-only by definition.
