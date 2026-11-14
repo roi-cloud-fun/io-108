@@ -250,7 +250,7 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
     helm upgrade orders charts/orders --namespace orders --reuse-values \
       --set networkPolicy.defaultDeny=false
     ```
-<!-- source: content/narratives/Module_1_narrative.md §"deployed with Helm" -->
+    <!-- source: content/narratives/Module_1_narrative.md §"deployed with Helm" -->
 
     (If you need an immediate manual fix instead, `kubectl -n orders delete networkpolicy <default-deny-name>` clears it; the declarative helm change is preferred so the next deploy does not reintroduce it.)
 

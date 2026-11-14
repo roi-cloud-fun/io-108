@@ -85,7 +85,7 @@ By the end of this lab, you will:
     ```bash
     kubectl -n orders get pods
     ```
-<!-- source: Lab_2_narrative.md §"kubectl get pods" -->
+    <!-- source: Lab_2_narrative.md §"kubectl get pods" -->
 
     You will see `orders-api` and `worker` pods in **`Pending`** — and, importantly, they are not `CrashLoopBackOff` or `ImagePullBackOff`. `Pending` means the scheduler has not been able to place the pod on a node at all. The distinction matters: `Pending` is a *placement* problem, not an *application* problem.
 
@@ -121,7 +121,7 @@ By the end of this lab, you will:
     ```bash
     kubectl get nodes
     ```
-<!-- source: Lab_2_narrative.md §"kubectl get nodes" -->
+    <!-- source: Lab_2_narrative.md §"kubectl get nodes" -->
 
     Expect **`No resources found`** — there are no worker nodes registered.
 
@@ -134,7 +134,7 @@ By the end of this lab, you will:
       --region $REGION \
       --query 'nodegroup.scalingConfig'
     ```
-<!-- source: facts_extracted_v2.md §"EKS Node Group Issues" -->
+    <!-- source: facts_extracted_v2.md §"EKS Node Group Issues" -->
 
     The healthy baseline is `minSize: 2, desiredSize: 2, maxSize: 3`. In this incident you will see **`desiredSize: 0`** (and `minSize: 0`) — the node group has been scaled to zero, so the cluster has no capacity and every pod stays `Pending`.
 
@@ -189,7 +189,7 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
       python -c "import socket; socket.setdefaulttimeout(5); socket.create_connection(('example.com',443)); print('reachable')" \
       || echo "egress blocked"
     ```
-<!-- source: facts_extracted_v2.md §"Network Troubleshooting" -->
+    <!-- source: facts_extracted_v2.md §"Network Troubleshooting" -->
 
     Expect a timeout / `egress blocked`, not `reachable`. (A debug pod *without* the
     `part-of: orders` label is **not** selected by the policy and would reach the internet
@@ -205,7 +205,7 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
       python -c "import socket; print(socket.gethostbyname('example.com'))" \
       || echo "dns blocked"
     ```
-<!-- source: facts_extracted_v2.md §"DNS Troubleshooting" -->
+    <!-- source: facts_extracted_v2.md §"DNS Troubleshooting" -->
 
     The lookup fails — a pod under the default-deny cannot even reach CoreDNS (`kube-dns`) in `kube-system`.
 
@@ -221,7 +221,7 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
     kubectl -n orders get networkpolicy
     kubectl -n orders describe networkpolicy
     ```
-<!-- source: facts_extracted_v2.md §"Network Troubleshooting" -->
+    <!-- source: facts_extracted_v2.md §"Network Troubleshooting" -->
 
     You will find a **default-deny egress** policy: it selects all pods in the namespace and permits no egress, so every outbound packet — internet *and* DNS — is dropped.
 
@@ -233,7 +233,7 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
       --region $REGION \
       --query 'addon.configurationValues'
     ```
-<!-- source: facts_extracted_v2.md §"Network Troubleshooting" -->
+    <!-- source: facts_extracted_v2.md §"Network Troubleshooting" -->
 
     You should see `"enableNetworkPolicy":"true"`. This is the teaching beat: in this environment enforcement **is** on, which is exactly why the default-deny is biting. If enforcement were off, the same policy would exist but have no effect — a classic "the rule looks right but nothing changes" trap.
 
@@ -270,7 +270,7 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
                 cidr: 0.0.0.0/0
     YAML
     ```
-<!-- source: facts_extracted_v2.md §"Network Troubleshooting" -->
+    <!-- source: facts_extracted_v2.md §"Network Troubleshooting" -->
 
     > **Cleaner alternative:** because the default-deny was applied by the Helm chart, you can also re-deploy the application with the policy turned off — `./deploy_app.sh` reads `network_policy_default_deny` from Terraform, so re-applying `scenario=healthy` (or running the deploy with `--set networkPolicy.defaultDeny=false`) removes the default-deny entirely. The targeted allow above is the better *incident-response* habit (restore service with least change); the redeploy is the better *configuration* fix.
 

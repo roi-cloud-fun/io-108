@@ -112,7 +112,7 @@ Run from a local clone or AWS CloudShell.
     kubectl -n orders logs deploy/orders-api --tail=30 | grep -i "read-only" || \
       kubectl -n orders logs deploy/orders-api --tail=30
     ```
-<!-- source: Lab_4_narrative.md §"Identify Affected Applications" -->
+    <!-- source: Lab_4_narrative.md §"Identify Affected Applications" -->
 
     Expected: `cannot execute INSERT in a read-only transaction` (or `UPDATE`/`DELETE`).
 
@@ -134,7 +134,7 @@ Run from a local clone or AWS CloudShell.
     ```bash
     \q then Enter to exit psql
     ```
-<!-- source: Module_3_narrative.md §"read replica" -->
+    <!-- source: Module_3_narrative.md §"read replica" -->
 
     Expected: `pg_is_in_recovery` returns **`t`** (true) — this connection is on a read replica, which is read-only by definition.
 
@@ -150,7 +150,7 @@ Run from a local clone or AWS CloudShell.
     ```bash
     \q then Enter to exit psql
     ```
-<!-- source: Module_3_narrative.md §"always tracks the current primary" -->
+    <!-- source: Module_3_narrative.md §"always tracks the current primary" -->
 
     Expected: returns **`f`** (false) — the cluster endpoint always points at the current writer.
 
@@ -179,7 +179,7 @@ Run from a local clone or AWS CloudShell.
     ./deploy_app.sh
     ```
     
-<!-- source: Lab_4_narrative.md §"use cluster endpoint" -->
+    <!-- source: Lab_4_narrative.md §"use cluster endpoint" -->
 
     This points `app_db_host` back at the cluster (writer) endpoint for both the app and the
     probe. (The rogue is always-on and unaffected — you contain it in Task 5.)
@@ -212,7 +212,7 @@ Run from a local clone or AWS CloudShell.
     ```bash
     \q then Enter to exit psql
     ```
-<!-- source: Lab_4_narrative.md §"Submit test order, verify processing" -->
+    <!-- source: Lab_4_narrative.md §"Submit test order, verify processing" -->
 
     Expected: the `INSERT` returns a new `id` - writes work.
 
@@ -242,7 +242,7 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has opene
     ```bash
     \q then Enter to exit psql
     ```
-<!-- source: Module_3_narrative.md §"the source address on the query is the tell" -->
+    <!-- source: Module_3_narrative.md §"the source address on the query is the tell" -->
 
     Compare the `client_addr` values against the rogue IP you captured (`$ROGUE_IP`). The rogue's source IP will appear holding a long-lived, benign-looking idle session (a `pg_sleep` that keeps one connection open) — exactly the kind of low-and-slow access that hides in plain sight.
 
@@ -256,7 +256,7 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has opene
       --filter-pattern "\"$ROGUE_IP\"" --region "$REGION" \
       --query 'events[].message' --output text | tail -10
     ```
-<!-- source: Module_3_narrative.md §"rogue IP we are hunting" -->
+    <!-- source: Module_3_narrative.md §"rogue IP we are hunting" -->
 
     Expected: repeated `connection received: host=<rogue IP>` lines on the ~1-minute cadence.
 

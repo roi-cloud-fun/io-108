@@ -90,7 +90,7 @@ By the end of this lab, you will:
     ```bash
     kubectl -n orders get pods
     ```
-<!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
+    <!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
 
     The `orders-api` pods are likely `Running` but failing their readiness probe (the app starts, but `/health` returns an error because it cannot reach the database). They may show `READY 0/1`.
 
@@ -126,7 +126,7 @@ By the end of this lab, you will:
       --policy-name io108-$SID-orders-api-inline \
       --region $REGION
     ```
-<!-- source: facts_extracted_v2.md §"Common IAM Issues" -->
+    <!-- source: facts_extracted_v2.md §"Common IAM Issues" -->
 
     In the broken state the policy contains a single, harmless `s3:ListBucket` statement on the reports bucket — and **nothing else**. The `secretsmanager:GetSecretValue` permission and the S3 object (`PutObject`/`GetObject`) permissions are gone.
 
@@ -186,7 +186,7 @@ By the end of this lab, you will:
       --resource-arns "$SECRET_ARN" \
       --query 'EvaluationResults[0].EvalDecision' --output text
     ```
-<!-- source: facts_extracted_v2.md §"IAM Policy Simulator" -->
+    <!-- source: facts_extracted_v2.md §"IAM Policy Simulator" -->
 
     This now returns **`allowed`**.
 
@@ -234,7 +234,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     | jq -r '.[] | fromjson | .userIdentity.sessionContext.sessionIssuer.userName' \
     | sort | uniq -c | sort -rn
     ```
-<!-- source: Module_2_narrative.md §"CloudTrail Event Structure" -->
+    <!-- source: Module_2_narrative.md §"CloudTrail Event Structure" -->
 
     Among the expected app roles (`io108-$SID-orders-api-role`, `-health-checker-role`,
     `-report-lambda-role`) you will find **`io108-$SID-rogue-actor`** — a principal that has
@@ -259,7 +259,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
       --region $REGION \
       --expression "SELECT resourceId, resourceType, tags WHERE tags.key = 'Rogue'"
     ```
-<!-- source: facts_extracted_v2.md §"AWS Config for Change Correlation" -->
+    <!-- source: facts_extracted_v2.md §"AWS Config for Change Correlation" -->
 
     > **Instructor note:** AWS Config requires an account-level configuration recorder, which lives in the shared lab stack (one recorder per account/region). If this query returns nothing, confirm the shared recorder is enabled; fall back to the EC2 tag search in step 14.
 
@@ -286,7 +286,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     aws ec2 stop-instances --region $REGION --instance-ids "$ROGUE_ID"
     aws ec2 wait instance-stopped --region $REGION --instance-ids "$ROGUE_ID"
     ```
-<!-- source: Module_2_narrative.md §"CloudTrail Audit and Rogue Resources" -->
+    <!-- source: Module_2_narrative.md §"CloudTrail Audit and Rogue Resources" -->
 
     **Alternative containment (network isolation):** instead of stopping it, detach its egress path by removing the rogue's access to Aurora. Swap the instance off the rogue security group, or delete the standalone ingress rule that lets the rogue reach Aurora on 5432 (`io108-$SID-aurora-from-rogue`). Either approach severs the connection the `Rogue contained` probe watches.
 

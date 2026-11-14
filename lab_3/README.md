@@ -118,7 +118,7 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
       --region "$REGION" --max-results 3 \
       --query 'executions[].{start:startDate,status:status}' --output table
     ```
-<!-- source: Module_3_narrative.md §"A FAILED execution shows you the exact state that failed" -->
+    <!-- source: Module_3_narrative.md §"A FAILED execution shows you the exact state that failed" -->
 
     Expected: the latest executions show `FAILED`.
 
@@ -133,7 +133,7 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
       --query "events[?type=='LambdaFunctionScheduleFailed' || type=='TaskFailed'].[type,taskFailedEventDetails.cause]" \
       --output text
     ```
-<!-- source: Module_3_narrative.md §"Open the failed execution and read the history" -->
+    <!-- source: Module_3_narrative.md §"Open the failed execution and read the history" -->
 
     You are looking for a cause that mentions throttling / `TooManyRequestsException` / `Rate Exceeded`, not an application stack trace. **That distinction is the whole diagnosis:** the workflow is wired correctly and the Lambda code is fine — the function is being *throttled before it runs*.
 
@@ -164,7 +164,7 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
     ```bash
     aws lambda get-function-concurrency --function-name "$REPORT_FN" --region "$REGION"
     ```
-<!-- source: Lab_3_narrative.md §"aws lambda get-function-concurrency" -->
+    <!-- source: Lab_3_narrative.md §"aws lambda get-function-concurrency" -->
 
     Expected: `"ReservedConcurrentExecutions": 0`. A reserved concurrency of **0** means the function is allowed **zero** simultaneous executions — so AWS throttles every single invocation.
 
@@ -180,7 +180,7 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
     ```bash
     aws lambda delete-function-concurrency --function-name "$REPORT_FN" --region "$REGION"
     ```
-<!-- source: Lab_3_narrative.md §"aws lambda put-function-concurrency" -->
+    <!-- source: Lab_3_narrative.md §"aws lambda put-function-concurrency" -->
 
     > **Why remove rather than reserve a small number?** You *could* instead set a small
     > positive reserve with `aws lambda put-function-concurrency --reserved-concurrent-executions
@@ -205,7 +205,7 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
     ```bash
     aws s3 ls "s3://$REPORTS_BUCKET/reports/" --recursive | tail -5
     ```
-<!-- source: course_outline_v3.md §"report landing in S3" -->
+    <!-- source: course_outline_v3.md §"report landing in S3" -->
 
     Expected: a new object with a recent timestamp.
 
