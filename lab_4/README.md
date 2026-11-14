@@ -130,6 +130,7 @@ Run from a local clone or AWS CloudShell.
       --env="PGPASSWORD=$PGPASSWORD" -- \
       psql -h "$READER" -U "$PGUSER" -d "$PGDATABASE" -c "SELECT pg_is_in_recovery();"
     ```
+    <!-- source: Module_3_narrative.md §"read replica" -->
 
     ```bash
     \q then Enter to exit psql
@@ -146,6 +147,7 @@ Run from a local clone or AWS CloudShell.
       --env="PGPASSWORD=$PGPASSWORD" -- \
       psql -h "$WRITER" -U "$PGUSER" -d "$PGDATABASE" -c "SELECT pg_is_in_recovery();"
     ```
+    <!-- source: Module_3_narrative.md §"always tracks the current primary" -->
 
     ```bash
     \q then Enter to exit psql
@@ -174,6 +176,7 @@ Run from a local clone or AWS CloudShell.
     ```bash
     terraform apply -var scenario=healthy -auto-approve    
     ```
+    <!-- source: Lab_4_narrative.md §"use cluster endpoint" -->
 
     ```bash
     ./deploy_app.sh
@@ -208,6 +211,7 @@ Run from a local clone or AWS CloudShell.
       psql -h "$WRITER" -U "$PGUSER" -d "$PGDATABASE" \
       -c "CREATE TABLE IF NOT EXISTS lab4_writecheck(id serial, ts timestamptz default now()); INSERT INTO lab4_writecheck DEFAULT VALUES RETURNING id;"
     ```
+    <!-- source: Lab_4_narrative.md §"Submit test order, verify processing" -->
 
     ```bash
     \q then Enter to exit psql
@@ -238,6 +242,7 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has opene
         WHERE client_addr IS NOT NULL
         ORDER BY backend_start DESC;"
     ```
+    <!-- source: Module_3_narrative.md §"the source address on the query is the tell" -->
 
     ```bash
     \q then Enter to exit psql

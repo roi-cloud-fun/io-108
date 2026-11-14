@@ -116,6 +116,7 @@ Run from a local clone or AWS CloudShell.
       --image=public.ecr.aws/docker/library/python:3.12-slim -- \
       python -c "import socket; socket.setdefaulttimeout(8); socket.create_connection(('203.0.113.10',443))" || echo "blackholed (expected)"
     ```
+    <!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
 
     Run it two or three times if you want more records. Wait ~1–2 min for Flow Log delivery, then in **Log Analytics**, select log group `$FLOW_LG` and run:
 
