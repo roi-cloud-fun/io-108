@@ -237,7 +237,7 @@ The `orders_api_db_access` tile is red because the orders-api IRSA role was stri
     ```
 <!-- source: course_outline_v3.md §"IAM/IRSA policy analysis" -->
 
-> **Expected Result:** **`orders_api_db_access`** turns **GREEN** within a cycle or two (the probe asks IAM directly). Leave the pods alone for now: they install packages at startup, so they cannot come back until Task 6 restores egress. (Refer back to Lab 1 for the full diagnosis of how you would *find* this from `AccessDenied` if it were not already localized for you.)
+> **Expected Result:** **`orders_api_db_access`** turns **GREEN** within about 3 minutes (the probe asks IAM directly). Leave the pods alone for now: they install packages at startup, so they cannot come back until Task 6 restores egress. (Refer back to Lab 1 for the full diagnosis of how you would *find* this from `AccessDenied` if it were not already localized for you.)
 
 ---
 
