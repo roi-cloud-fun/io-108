@@ -43,9 +43,14 @@ else
 fi
 
 # 3. /health returns ok (in-cluster probe)
-HEALTH=$(kubectl -n orders run "verify-health-$$" --rm -i --restart=Never \
-  --image=public.ecr.aws/docker/library/python:3.12-slim --quiet -- \
-  python -c "import urllib.request; print(urllib.request.urlopen('http://orders-api:8080/health', timeout=10).read().decode())" 2>/dev/null)
+# Retry: kubectl can lose the attach race with this short-lived pod and return
+# no output even though the app is healthy.
+for attempt in 1 2 3; do
+  HEALTH=$(kubectl -n orders run "verify-health-$$-$attempt" --rm -i --restart=Never \
+    --image=public.ecr.aws/docker/library/python:3.12-slim --quiet -- \
+    python -c "import urllib.request; print(urllib.request.urlopen('http://orders-api:8080/health', timeout=10).read().decode())" 2>/dev/null)
+  [ -n "$HEALTH" ] && break
+done
 if echo "$HEALTH" | grep -q '"status": *"ok"'; then
   pass "orders-api /health reports ok (database connected)"
 else
@@ -74,7 +79,7 @@ fi
 
 # 6. Report object exists in S3
 REPORT_KEY=$(aws s3api list-objects-v2 --bucket "$REPORTS_BUCKET" --prefix "reports/" \
-  --max-items 1 --region "$REGION" --query 'Contents[0].Key' --output text 2>/dev/null)
+  --max-keys 1 --region "$REGION" --query 'Contents[0].Key' --output text 2>/dev/null)
 if [ -n "$REPORT_KEY" ] && [ "$REPORT_KEY" != "None" ]; then
   pass "report found: s3://$REPORTS_BUCKET/$REPORT_KEY"
 else

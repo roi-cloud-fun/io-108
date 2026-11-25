@@ -53,6 +53,10 @@ helm upgrade --install orders charts/orders \
   --set connCheck.region="$REGION" \
   --set networkPolicy.defaultDeny="$NETPOL_DEFAULT_DENY"
 
+# Lab 2's student-applied allow policy would cancel the default-deny that Lab 5
+# injects, so every redeploy starts from the chart's own policies only.
+kubectl -n orders delete networkpolicy orders-allow-egress --ignore-not-found
+
 echo "==> Waiting for orders-api rollout (pip install at startup takes a minute)"
 # Under a fault scenario the app is MEANT to be broken (lab2: pods Pending for
 # lack of capacity; lab1: IRSA AccessDenied so /health 503s), so a failed rollout
@@ -72,5 +76,5 @@ fi
 echo ""
 echo "Deploy complete. Next steps:"
 echo "  1. ./verify.sh                 # full health verification (Lab 0)"
-echo "  2. Open your CloudWatch dashboard: $(terraform output -raw dashboard_name)"
+echo "  2. Open your CloudWatch dashboard: $(terraform output -raw incident_board_dashboard_name)"
 echo "  3. Reports land in s3://$REPORTS_BUCKET/reports/ within one schedule period."

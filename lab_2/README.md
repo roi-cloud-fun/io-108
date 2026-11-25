@@ -43,7 +43,8 @@ chmod +x ./deploy_app.sh
 The `terraform apply` scales your managed node group to **zero**; the `./deploy_app.sh`
 re-deploy applies the default-deny egress NetworkPolicy to the `orders` namespace (the policy
 is delivered by the Helm chart, so the redeploy is required — terraform alone does not apply
-it). Within a minute the three Lab 2 tiles go red. (`deploy_app.sh` will warn that the
+it). `EKS pods schedulable` goes red within about two minutes;
+`Pod → internet` and `Pod → DNS` follow in about 5 minutes (they turn red on missing data). (`deploy_app.sh` will warn that the
 `orders-api` rollout did not complete — that is expected with zero nodes; it continues anyway.)
 
 ---
@@ -55,7 +56,7 @@ By the end of this lab, you will:
 - Distinguish pod **status** values (`Pending` vs `Running` vs `CrashLoopBackOff`) and read a `FailedScheduling` event to its root cause.
 - Trace a scheduling failure to **node-group capacity** and confirm it with the EKS API and Container Insights.
 - Scale a managed node group back up with `aws eks update-nodegroup-config` and watch pods schedule.
-- Diagnose pod egress and DNS failures from inside a container using `curl` and `nslookup`.
+- Diagnose pod egress and DNS failures from inside a container using short Python socket tests.
 - Inspect Kubernetes **NetworkPolicies**, understand the **VPC CNI NetworkPolicy enforcement** requirement, and open the needed egress so `Pod → internet` and `Pod → DNS` go green.
 
 ---
@@ -92,7 +93,7 @@ By the end of this lab, you will:
 4. **Describe** a Pending pod and read its **Events** — the scheduler writes the reason there:
 
     ```bash
-    POD=$(kubectl -n orders get pods -l app=orders-api -o jsonpath='{.items[0].metadata.name}')
+    POD=$(kubectl -n orders get pods -l app=orders-api --field-selector=status.phase=Pending -o jsonpath='{.items[0].metadata.name}')
     kubectl -n orders describe pod "$POD" | sed -n '/Events:/,$p'
     ```
 <!-- source: facts_extracted_v2.md §"kubectl describe pod" -->
@@ -107,7 +108,7 @@ By the end of this lab, you will:
     or, if nodes are mid-termination:
 
     ```
-    0/2 nodes are available: 2 Insufficient cpu / nodes are being drained.
+    0/2 nodes are available: 2 node(s) were unschedulable.
     ```
 
 > **Expected Result:** The scheduler explicitly reports it has **no nodes** (or insufficient capacity) to place the pods. This points away from the application and toward the cluster's compute capacity.
@@ -123,7 +124,7 @@ By the end of this lab, you will:
     ```
     <!-- source: Lab_2_narrative.md §"kubectl get nodes" -->
 
-    Expect **`No resources found`** — there are no worker nodes registered.
+    Expect **`No resources found`** — there are no worker nodes registered. (Nodes still draining show `Ready,SchedulingDisabled` for a few minutes; re-run until they are gone.)
 
 7. **Confirm** at the source: inspect the managed node group's scaling configuration via the EKS API:
 
@@ -161,7 +162,7 @@ By the end of this lab, you will:
 
     ```bash
     kubectl get nodes -w        # Ctrl-C once 2 nodes are Ready
-    kubectl -n orders get pods -w
+    kubectl -n orders get pods -w   # Ctrl-C once the pods are Running
     ```
 <!-- source: Lab_2_narrative.md §"kubectl get nodes" -->
 
@@ -186,12 +187,13 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
     kubectl -n orders run nettest --rm -i --restart=Never \
       --labels="app.kubernetes.io/part-of=orders" \
       --image=public.ecr.aws/docker/library/python:3.12-slim -- \
-      python -c "import socket; socket.setdefaulttimeout(5); socket.create_connection(('example.com',443)); print('reachable')" \
+      python -c "import socket,time; time.sleep(15); socket.setdefaulttimeout(5); socket.create_connection(('example.com',443)); print('reachable')" \
       || echo "egress blocked"
     ```
     <!-- source: facts_extracted_v2.md §"Network Troubleshooting" -->
 
-    Expect a timeout / `egress blocked`, not `reachable`. (A debug pod *without* the
+    The 15-second wait matters: the VPC CNI attaches policy a moment *after* a pod starts, so an
+    immediate test can slip through. Expect a timeout / `egress blocked`, not `reachable`. (A debug pod *without* the
     `part-of: orders` label is **not** selected by the policy and would reach the internet
     fine — proof that the block is scoped by the NetworkPolicy's pod selector.)
 
@@ -202,7 +204,7 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
     kubectl -n orders run dnstest --rm -i --restart=Never \
       --labels="app.kubernetes.io/part-of=orders" \
       --image=public.ecr.aws/docker/library/python:3.12-slim -- \
-      python -c "import socket; print(socket.gethostbyname('example.com'))" \
+      python -c "import socket,time; time.sleep(15); print(socket.gethostbyname('example.com'))" \
       || echo "dns blocked"
     ```
     <!-- source: facts_extracted_v2.md §"DNS Troubleshooting" -->
@@ -223,7 +225,7 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
     ```
     <!-- source: facts_extracted_v2.md §"Network Troubleshooting" -->
 
-    You will find a **default-deny egress** policy: it selects all pods in the namespace and permits no egress, so every outbound packet — internet *and* DNS — is dropped.
+    You will find a **default-deny egress** policy: it selects the pods labelled `app.kubernetes.io/part-of: orders` and permits them no egress, so every outbound packet from those pods — internet *and* DNS — is dropped.
 
 14. **Confirm** that enforcement is actually on. A NetworkPolicy is inert unless the CNI enforces it. On EKS, the **VPC CNI must have NetworkPolicy enforcement enabled**, otherwise the AWS CNI silently ignores the policy:
 
@@ -237,7 +239,7 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
 
     You should see `"enableNetworkPolicy":"true"`. This is the teaching beat: in this environment enforcement **is** on, which is exactly why the default-deny is biting. If enforcement were off, the same policy would exist but have no effect — a classic "the rule looks right but nothing changes" trap.
 
-> **Expected Result:** You can name the cause: a namespace-wide default-deny egress NetworkPolicy, *actively enforced* because the VPC CNI has `enableNetworkPolicy=true`. The fix is not to disable enforcement — it is to allow the egress the workload legitimately needs.
+> **Expected Result:** You can name the cause: a default-deny egress NetworkPolicy on the `part-of: orders` pods, *actively enforced* because the VPC CNI has `enableNetworkPolicy=true`. The fix is not to disable enforcement — it is to allow the egress the workload legitimately needs.
 
 ---
 
@@ -280,11 +282,11 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
     kubectl -n orders run nettest --rm -i --restart=Never \
       --labels="app.kubernetes.io/part-of=orders" \
       --image=public.ecr.aws/docker/library/python:3.12-slim -- \
-      python -c "import socket; print('dns', socket.gethostbyname('example.com')); socket.setdefaulttimeout(5); socket.create_connection(('example.com',443)); print('egress reachable')"
+      python -c "import socket,time; time.sleep(15); print('dns', socket.gethostbyname('example.com')); socket.setdefaulttimeout(5); socket.create_connection(('example.com',443)); print('egress reachable')"
     ```
 <!-- source: facts_extracted_v2.md §"DNS Troubleshooting" -->
 
-> **Expected Result:** DNS resolves and the connection reports `egress reachable`. Within a minute the in-cluster checker publishes again and the **`Pod → internet`** and **`Pod → DNS`** tiles turn **green**. All three Lab 2 tiles are now green — close the P2 incident in ServiceNow with both root causes recorded: node group scaled to zero, and a default-deny egress NetworkPolicy with no allow rule.
+> **Expected Result:** DNS resolves and the connection reports `egress reachable`. Within 1–2 minutes the in-cluster checker publishes again and the **`Pod → internet`** and **`Pod → DNS`** tiles turn **green**. All three Lab 2 tiles are now green — close the P2 incident in ServiceNow with both root causes recorded: node group scaled to zero, and a default-deny egress NetworkPolicy with no allow rule.
 
 ---
 
@@ -300,7 +302,7 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
 
 **Question 3:** The default-deny NetworkPolicy existed and was correct, yet on a cluster without VPC CNI NetworkPolicy enforcement it would have had no effect. Explain the dependency, and why DNS broke alongside internet egress.
 
-**Answer:** A Kubernetes NetworkPolicy is only a *declaration* — something must enforce it in the data plane. On EKS the **VPC CNI enforces NetworkPolicies only when `enableNetworkPolicy=true`** is set on the `vpc-cni` addon; otherwise the policy is silently ignored and traffic flows as if it were not there. In this lab enforcement is on, so the **default-deny egress** dropped *all* outbound pod traffic. DNS broke alongside the internet because resolving a name requires the pod to send packets to **CoreDNS in `kube-system`** — that is egress too, so a blanket egress deny takes out name resolution as well as direct internet access. The fix must explicitly allow egress to UDP/TCP 53 toward kube-system.
+**Answer:** A Kubernetes NetworkPolicy is only a *declaration* — something must enforce it in the data plane. On EKS the **VPC CNI enforces NetworkPolicies only when `enableNetworkPolicy=true`** is set on the `vpc-cni` addon; otherwise the policy is silently ignored and traffic flows as if it were not there. In this lab enforcement is on, so the **default-deny egress** dropped *all* outbound traffic from the pods it selects. DNS broke alongside the internet because resolving a name requires the pod to send packets to **CoreDNS in `kube-system`** — that is egress too, so a blanket egress deny takes out name resolution as well as direct internet access. The fix must explicitly allow egress to UDP/TCP 53 toward kube-system.
 
 ---
 
@@ -314,7 +316,7 @@ You worked a **P2** EKS workload outage from the board to green. Pods stuck `Pen
 - [ ] Pods observed `Pending`; `FailedScheduling` event read from `kubectl describe`
 - [ ] Root cause confirmed: node group `io108-$SID-nodes` at `desiredSize=0` (no nodes registered)
 - [ ] Node group scaled to `minSize=2,desiredSize=2,maxSize=3`; pods reach `Running`; `EKS pods schedulable` green
-- [ ] Pod egress + DNS failure reproduced from inside a container (`curl` / `nslookup`)
+- [ ] Pod egress + DNS failure reproduced from inside a container (Python socket tests)
 - [ ] Default-deny egress NetworkPolicy found; VPC CNI enforcement (`enableNetworkPolicy=true`) confirmed
 - [ ] Targeted egress allowed (or chart redeployed); `Pod → internet` and `Pod → DNS` green
 

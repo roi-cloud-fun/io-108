@@ -68,7 +68,7 @@ Run from a local clone or AWS CloudShell.
     cd lab_environment/lab_env_student
     terraform plan  -var scenario=lab5                       # student_id + region from terraform.tfvars (Lab 0)
     terraform apply -var scenario=lab5 -auto-approve
-    ./deploy_app.sh
+    ./deploy_app.sh          # waits ~5 min, then warns orders-api is not Ready: expected here
     ```
 <!-- source: course_outline_v3.md §"Lab 5" -->
 
@@ -127,7 +127,7 @@ Run from a local clone or AWS CloudShell.
     | limit 50
     ```
 
-    You will now see outbound records from your pod (`srcAddr`) toward the partner CIDR (`dstAddr` in `203.0.113.x`) with **no corresponding return traffic** — the asymmetric, one-way signature of a routing blackhole. (A security-group or NACL block would instead show `REJECT` records; here the packets simply leave via the wrong hop and never come back.)
+    You will now see outbound records (`srcAddr` is your EKS **node's** IP: the VPC CNI source-NATs pod traffic leaving the VPC) toward the partner CIDR (`dstAddr` in `203.0.113.x`) with **no corresponding return traffic** — the asymmetric, one-way signature of a routing blackhole. (A security-group or NACL block would instead show `REJECT` records; here the packets simply leave via the wrong hop and never come back.)
 
 4. **Run VPC Reachability Analyzer** to name the broken hop. In the **VPC console -> Reachability Analyzer -> Create and analyze path**:
 
@@ -135,7 +135,23 @@ Run from a local clone or AWS CloudShell.
     - **Destination type:** IP address, **Destination address:** an address inside `$PARTNER_CIDR` (e.g. `203.0.113.10`)
     - **Analyze**
 
-    The result reports **Not reachable** and points at the route table hop - a route for `203.0.113.0/24` sending traffic to an **internet gateway** instead of the NAT gateway. Reachability Analyzer has just told you exactly which hop is misconfigured, without reading a single packet.
+    If the console asks for a destination resource instead, use the CLI:
+
+    ```bash
+    ENI=$(aws ec2 describe-instances --region "$REGION" \
+      --filters "Name=tag:Name,Values=io108-${STUDENT_ID}-node" "Name=instance-state-name,Values=running" \
+      --query 'Reservations[0].Instances[0].NetworkInterfaces[0].NetworkInterfaceId' --output text)
+    NIP=$(aws ec2 create-network-insights-path --region "$REGION" --source "$ENI" --protocol tcp \
+      --filter-at-source DestinationAddress=203.0.113.10 \
+      --query NetworkInsightsPath.NetworkInsightsPathId --output text)
+    NIA=$(aws ec2 start-network-insights-analysis --region "$REGION" --network-insights-path-id "$NIP" \
+      --query NetworkInsightsAnalysis.NetworkInsightsAnalysisId --output text)
+    sleep 60
+    aws ec2 describe-network-insights-analyses --region "$REGION" --network-insights-analysis-ids "$NIA" \
+      --query 'NetworkInsightsAnalyses[0].{Found:NetworkPathFound,Why:Explanations[].ExplanationCode,Hops:ForwardPathComponents[].RouteTableRoute}'
+    ```
+
+    The result reports **Not reachable** (`IGW_PUBLIC_IP_ASSOCIATION_FOR_EGRESS`) and the path shows the route table hop - a route for `203.0.113.0/24` sending traffic to an **internet gateway** instead of the NAT gateway. Reachability Analyzer has just told you exactly which hop is misconfigured, without reading a single packet.
 
 > **Flow Logs vs. Reachability Analyzer:** Flow Logs show you what *did* happen on the wire (drops, asymmetry, volume). Reachability Analyzer reasons about the *configuration* and tells you which hop *would* break a path and why — even with no live traffic. For a routing fault, Reachability Analyzer usually localizes it fastest; Flow Logs confirm the real-world symptom.
 
@@ -319,7 +335,7 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
 
 ### Pod tiles stay red
 
-**Check:** `kubectl -n orders get networkpolicy` should no longer show a default-deny. The conncheck CronJob runs every minute; give it a cycle to republish metrics.
+**Check:** `kubectl -n orders get networkpolicy` should no longer show a default-deny. The conncheck CronJob runs every minute; give it a cycle to republish metrics. (After the *apply*, these two tiles take ~5 minutes to go red.)
 
 ---
 

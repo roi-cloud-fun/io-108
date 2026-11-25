@@ -64,8 +64,9 @@ By the end of this lab, you will:
 
     ```bash
     aws --version          # AWS CLI v2.x
-    terraform version      # 1.5+
+    terraform version      # 1.10+
     kubectl version --client
+    helm version --short
     jq --version
     ```
     <!-- source: course_outline_v3.md §"Lab 0" -->
@@ -93,19 +94,23 @@ By the end of this lab, you will:
     ```
 
 6. **Initialize** Terraform **against your remote state**, then **plan** and **apply** the
-   **healthy** baseline. Your state lives in a shared S3 bucket under your own key, so pass it at
-   init time. The `scenario` variable defaults to `healthy` — the green starting point:
+   **healthy** baseline. Your state lives in a shared S3 bucket under your own key. The bucket name
+   is published in SSM Parameter Store, so look it up and pass both at init time. The `scenario` variable defaults to `healthy` — the green starting point:
 
     ```bash
-    terraform init -backend-config="key=io108/$SID/terraform.tfstate"
+    STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \
+      --name /io108/tfstate-bucket --query Parameter.Value --output text)
+    terraform init -backend-config="bucket=$STATE_BUCKET" \
+      -backend-config="key=io108/$SID/terraform.tfstate"
     terraform plan  -var scenario=healthy    # student_id + region come from terraform.tfvars
     terraform apply -var scenario=healthy
     ```
     <!-- source: course_outline_v3.md §"Lab 0" -->
 
     > **Already deployed for you?** If your instructor pre-provisioned your stack, `terraform
-    > plan` will report **"No changes"** after `init` — that confirms your clone is correctly
-    > wired to your existing stack. Skip the apply and go straight to the incident labs.
+    > plan` will show only a few changes, mainly `aws_eks_access_entry` being replaced so that **your**
+    > identity gets cluster access. Run the apply (a minute or two); `kubectl` is denied until you do.
+    > If the plan wants to create 100+ resources, stop: your `init` points at the wrong state key.
 
     Review the plan and type **yes** to confirm. This provisions your VPC (public/private subnets, NAT), the EKS cluster and managed node group, the Aurora cluster, the reporting Lambda and Step Functions workflow, the S3 report and sink buckets, the health-checker Lambda, the alarms, and **both** CloudWatch dashboards.
 
@@ -167,7 +172,7 @@ By the end of this lab, you will:
 
 > **Expected Result:** `ALL CHECKS PASSED -- your stack is healthy. Capture this baseline for Lab 0.`
 >
-> The first report lands within **one schedule period (default 5 minutes)**. If the Step Functions / S3 report checks fail on the very first run, wait one period and re-run `./verify.sh` — those two are timing-dependent, not broken.
+> The first report lands within **one schedule period (default 5 minutes)**. If the Step Functions / S3 report checks fail on the very first run, wait one period and re-run `./verify.sh` — those two are timing-dependent, not broken. Report runs that started before `deploy_app.sh` show as `FAILED` with `relation "orders" does not exist`, because the app creates that table; the next scheduled run succeeds.
 
 ---
 
@@ -190,7 +195,7 @@ By the end of this lab, you will:
 14. **Note** which tiles are red *even in the healthy baseline*. These are the **security through-line** tiles:
 
     - **`Rogue contained`** — RED, because the rogue instance is running and reachable. You contain it in **Lab 1**.
-    - **`Aurora: no rogue sessions`** — RED, because the rogue opens a benign Postgres session to Aurora about once a minute. You lock it out in **Lab 4**.
+    - **`Aurora: no rogue sessions`** — RED, because the rogue holds a benign Postgres session open to Aurora. You lock it out in **Lab 4**.
 
     Some Lab 3 fan-out sink tiles may also take a couple of minutes to first go green while the distribution heartbeat warms up.
 
@@ -204,7 +209,7 @@ By the end of this lab, you will:
 
 **Question 1:** Your board shows every tile green except `Rogue contained` and `Aurora: no rogue sessions`. A teammate says "the deploy is broken, two checks are red." Are they right? Explain what those two tiles actually mean.
 
-**Answer:** No — the deploy is healthy. Those two tiles are the **security through-line**: a rogue EC2 instance (`io108-$SID-rogue`) and its tagged IAM principal are deliberately present in the environment from the first apply. `Rogue contained` is red because the instance is still running and reachable; `Aurora: no rogue sessions` is red because the rogue opens a benign Postgres session to Aurora about once a minute. Both are *known issues* you address later (Lab 1 contains the instance, Lab 4 locks it out of Aurora), not deployment failures.
+**Answer:** No — the deploy is healthy. Those two tiles are the **security through-line**: a rogue EC2 instance (`io108-$SID-rogue`) and its tagged IAM principal are deliberately present in the environment from the first apply. `Rogue contained` is red because the instance is still running and reachable; `Aurora: no rogue sessions` is red because the rogue holds a benign Postgres session open to Aurora. Both are *known issues* you address later (Lab 1 contains the instance, Lab 4 locks it out of Aurora), not deployment failures.
 
 **Question 2:** How does a single check on the board turn from green to red, mechanically — from probe to tile?
 

@@ -15,6 +15,7 @@ throwaway training account):
 ```
 ec2:*                 elasticloadbalancing:*   iam:*
 eks:*                 rds:*                    kms:*
+pi:*                  # Performance Insights (Lab 4)
 lambda:*              s3:*                     logs:*
 cloudwatch:*          secretsmanager:*         sns:*   sqs:*
 states:*              # Step Functions — the report workflow (REQUIRED, often missing)
@@ -25,6 +26,9 @@ tiros:CreateQuery     # VPC Reachability Analyzer (Lab 5 / network demos) runs o
                       #   "tiros" service; without it, analyses fail "not authorized to perform
                       #   tiros:CreateQuery". Use tiros:* to cover CreateQuery + GetQueryAnswer.
 ```
+
+Students also need `cloudtrail:LookupEvents` and `config:SelectResourceConfig` for Lab 1
+(`cloudtrail:*` and `config:*` are simplest).
 
 A `Deny` on `organizations:*`, `account:*`, `bedrock:*` is fine and does not affect the labs.
 

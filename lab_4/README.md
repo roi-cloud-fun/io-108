@@ -92,6 +92,17 @@ Run from a local clone or AWS CloudShell.
     export PGUSER=orders_admin
     export PGDATABASE=orders
     ```
+
+4. **Start a small `psql` client pod** inside the cluster; later steps run queries through it:
+
+    ```bash
+    kubectl -n orders run psql-client --restart=Never \
+      --image=public.ecr.aws/docker/library/postgres:16 \
+      --env="PGPASSWORD=$PGPASSWORD" -- sleep 14400
+    kubectl -n orders wait --for=condition=Ready pod/psql-client --timeout=120s
+    ```
+
+    (If it already exists from an earlier attempt, run `kubectl -n orders delete pod psql-client` first.)
 <!-- source: Lab_4_narrative.md §"ConfigMap/Secret for database URL" -->
 
 ---
@@ -122,19 +133,13 @@ Run from a local clone or AWS CloudShell.
 
 ## Task 2: Prove the Connection Is on a Read Replica
 
-3. **Open** a one-off `psql` session **against the endpoint the app is currently using** (the reader), from inside the cluster so the network path matches the app's:
+3. **Run** a query **against the endpoint the app is currently using** (the reader), from inside the cluster so the network path matches the app's:
 
     ```bash
-    kubectl -n orders run psql-reader --rm -it --restart=Never \
-      --image=public.ecr.aws/docker/library/postgres:16 \
-      --env="PGPASSWORD=$PGPASSWORD" -- \
-      psql -h "$READER" -U "$PGUSER" -d "$PGDATABASE" -c "SELECT pg_is_in_recovery();"
+    kubectl -n orders exec psql-client -- psql -h "$READER" -U "$PGUSER" -d "$PGDATABASE" -c "SELECT pg_is_in_recovery();"
     ```
     <!-- source: Module_3_narrative.md §"read replica" -->
 
-    ```bash
-    \q then Enter to exit psql
-    ```
     <!-- source: Module_3_narrative.md §"read replica" -->
 
     Expected: `pg_is_in_recovery` returns **`t`** (true) — this connection is on a read replica, which is read-only by definition.
@@ -142,16 +147,10 @@ Run from a local clone or AWS CloudShell.
 4. **Compare** against the cluster (writer) endpoint:
 
     ```bash
-    kubectl -n orders run psql-writer --rm -it --restart=Never \
-      --image=public.ecr.aws/docker/library/postgres:16 \
-      --env="PGPASSWORD=$PGPASSWORD" -- \
-      psql -h "$WRITER" -U "$PGUSER" -d "$PGDATABASE" -c "SELECT pg_is_in_recovery();"
+    kubectl -n orders exec psql-client -- psql -h "$WRITER" -U "$PGUSER" -d "$PGDATABASE" -c "SELECT pg_is_in_recovery();"
     ```
     <!-- source: Module_3_narrative.md §"always tracks the current primary" -->
 
-    ```bash
-    \q then Enter to exit psql
-    ```
     <!-- source: Module_3_narrative.md §"always tracks the current primary" -->
 
     Expected: returns **`f`** (false) — the cluster endpoint always points at the current writer.
@@ -205,17 +204,11 @@ Run from a local clone or AWS CloudShell.
 7. **Verify** writes succeed now:
 
     ```bash
-    kubectl -n orders run psql-check --rm -it --restart=Never \
-      --image=public.ecr.aws/docker/library/postgres:16 \
-      --env="PGPASSWORD=$PGPASSWORD" -- \
-      psql -h "$WRITER" -U "$PGUSER" -d "$PGDATABASE" \
+    kubectl -n orders exec psql-client -- psql -h "$WRITER" -U "$PGUSER" -d "$PGDATABASE" \
       -c "CREATE TABLE IF NOT EXISTS lab4_writecheck(id serial, ts timestamptz default now()); INSERT INTO lab4_writecheck DEFAULT VALUES RETURNING id;"
     ```
     <!-- source: Lab_4_narrative.md §"Submit test order, verify processing" -->
 
-    ```bash
-    \q then Enter to exit psql
-    ```
     <!-- source: Lab_4_narrative.md §"Submit test order, verify processing" -->
 
     Expected: the `INSERT` returns a new `id` - writes work.
@@ -228,15 +221,12 @@ Run from a local clone or AWS CloudShell.
 
 ## Task 4: Trace the Rogue Client with Query Tracing
 
-The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has opened a Postgres session to Aurora roughly once a minute using stolen master credentials. Now you will catch it on the database itself.
+The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has held a Postgres session open to Aurora using stolen master credentials. (You stopped it in Lab 1; it is back — applying `lab4` restarted it.) Now you will catch it on the database itself.
 
 8. **List live sessions** with `pg_stat_activity` and look for a client whose source IP is **not** an EKS pod:
 
     ```bash
-    kubectl -n orders run psql-activity --rm -it --restart=Never \
-      --image=public.ecr.aws/docker/library/postgres:16 \
-      --env="PGPASSWORD=$PGPASSWORD" -- \
-      psql -h "$WRITER" -U "$PGUSER" -d "$PGDATABASE" -c \
+    kubectl -n orders exec psql-client -- psql -h "$WRITER" -U "$PGUSER" -d "$PGDATABASE" -c \
       "SELECT pid, client_addr, usename, state, query
          FROM pg_stat_activity
         WHERE client_addr IS NOT NULL
@@ -244,14 +234,11 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has opene
     ```
     <!-- source: Module_3_narrative.md §"the source address on the query is the tell" -->
 
-    ```bash
-    \q then Enter to exit psql
-    ```
     <!-- source: Module_3_narrative.md §"the source address on the query is the tell" -->
 
-    Compare the `client_addr` values against the rogue IP you captured (`$ROGUE_IP`). The rogue's source IP will appear holding a long-lived, benign-looking idle session (a `pg_sleep` that keeps one connection open) — exactly the kind of low-and-slow access that hides in plain sight.
+    Compare the `client_addr` values against the rogue IP you captured (`$ROGUE_IP`). The rogue's source IP will appear holding a long-lived, benign-looking session (a `pg_sleep` that keeps one connection open) — exactly the kind of low-and-slow access that hides in plain sight.
 
-9. **Corroborate with Performance Insights.** In the **RDS console -> Performance Insights**, select your writer instance, and group the top load **by host / client**. The rogue's host shows up as a contributor distinct from the application pods. This is the GUI view of the same evidence — useful when you cannot get a psql session.
+9. **Corroborate with Performance Insights.** Open **CloudWatch -> Database Insights** (or the RDS console's Performance Insights view), select your writer instance, and slice the DB load **by host**. The rogue's host shows up as a contributor distinct from the application pods. This is the GUI view of the same evidence — useful when you cannot get a psql session.
 
 10. **Corroborate with connection logs.** The cluster has `log_connections` and `log_disconnections` enabled. In **CloudWatch Logs**, open the log group `/aws/rds/cluster/io108-<your-id>-aurora/postgresql` and filter for the rogue IP:
 
@@ -263,7 +250,7 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has opene
     ```
     <!-- source: Module_3_narrative.md §"rogue IP we are hunting" -->
 
-    Expected: repeated `connection received: host=<rogue IP>` lines on the ~1-minute cadence.
+    Expected: repeated `connection received: host=<rogue IP>` lines about every 5 minutes, each time its session is reopened.
 
 > **Three lenses, one conclusion:** `pg_stat_activity` (live), Performance Insights (top SQL by host, historical), and the connection log (audit trail) all point at the same client IP. In an investigation you want at least two independent lenses agreeing before you take containment action.
 
@@ -291,7 +278,7 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has opene
     ```
 <!-- source: Module_3_narrative.md §"rogue IP we are hunting" -->
 
-13. **Confirm** no rogue sessions remain. Re-run the `pg_stat_activity` query from Task 4 step 8; the rogue IP should no longer appear (existing sessions die within a cycle).
+13. **Confirm** no rogue sessions remain. Re-run the `pg_stat_activity` query from Task 4 step 8; the rogue IP should no longer appear (a session already open can linger up to ~5 minutes).
 
 > **Expected Result:** Within 1-2 minutes the **Aurora: no rogue sessions** (`aurora_no_rogue`) tile turns **GREEN**. With the instance stopped, `rogue_contained` goes green too.
 
@@ -307,11 +294,11 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has opene
 
 ### `psql` pod cannot connect at all (timeout)
 
-**Check:** The throwaway `psql` pod must run in the `orders` namespace so it inherits the path to Aurora's security group. Confirm `$PGPASSWORD` is set and you are using the right endpoint variable.
+**Check:** The `psql-client` pod must run in the `orders` namespace so it inherits the path to Aurora's security group. Confirm `$PGPASSWORD` is set and you are using the right endpoint variable.
 
 ### `aurora_no_rogue` stays red
 
-**Check:** The probe counts sessions from the rogue IP. If you only stopped the instance but a session was mid-flight, give it a cycle. Confirm the SG ingress rule was actually revoked: `aws ec2 describe-security-groups --group-ids "$AURORA_SG"` should no longer list the rogue SG on port 5432.
+**Check:** The probe counts sessions from the rogue IP. If you only stopped the instance but a session was mid-flight, give it up to ~5 minutes. Confirm the SG ingress rule was actually revoked: `aws ec2 describe-security-groups --group-ids "$AURORA_SG"` should no longer list the rogue SG on port 5432.
 
 ---
 

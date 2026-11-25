@@ -1,7 +1,7 @@
 """IO-108 fan-out forwarder -- the last hop of the Lab 3 event-distribution demo.
 
 Pipeline:
-    CloudWatch Alarm (report errors)  --\
+    CloudWatch Alarm (report failures)--\
                                          >-- EventBridge --> Step Functions
     EventBridge heartbeat (synthetic) --/        (Parallel: one branch per
                                                   destination) --> SQS x N -->
@@ -60,7 +60,7 @@ def _deliver(record_body):
     enriched = {
         "destination": destination,
         "forwarded_at": now.isoformat(),
-        "event": payload,
+        "event": payload.get("event", payload),
     }
     _s3.put_object(
         Bucket=bucket,

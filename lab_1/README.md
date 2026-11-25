@@ -35,17 +35,12 @@ You open a **P2** incident in **ServiceNow** — the service is degraded but the
 
 ```bash
 cd lab_environment/lab_env_student
-cp terraform.tfvars.example terraform.tfvars
-nano or vi terraform.tfvars
-set your region and sXX (current student ID)
-
-terraform init
-Enter our state folder path: io108/sXX/terraform.tfstate
-
 terraform plan  -var scenario=lab1     # student_id + region come from your terraform.tfvars (Lab 0)
 terraform apply -var scenario=lab1
 ```
 <!-- source: course_outline_v3.md §"Lab 1: IAM Access Denial Investigation" -->
+
+> **New machine or fresh clone since Lab 0?** Recreate `terraform.tfvars` (your `student_id` and `region`) and re-run the `terraform init` from Lab 0, Task 2 before the commands above.
 
 This swaps the `orders-api` IRSA role's policy for one that is **missing** the Aurora-secret read and the S3 object permissions. Within a minute the board tile goes red.
 
@@ -65,7 +60,7 @@ By the end of this lab, you will:
 
 ## Task 1: Triage from the Board
 
-1. **Open** your incident board (**CloudWatch → Dashboards → `io108-$SID-incident-board`**) and confirm the **`orders-api DB access (IRSA)`** tile under the Lab 1 band is **red**. The `Reports flowing` tile (Lab 3 band) may also dip, because the reporting path depends on the same data.
+1. **Open** your incident board (**CloudWatch → Dashboards → `io108-$SID-incident-board`**) and confirm the **`orders-api DB access (IRSA)`** tile under the Lab 1 band is **red**. The `Reports flowing` tile (Lab 3 band) stays green: the report Lambda uses its own role, which this incident does not touch.
 
 2. **Re-establish** your shell variables if you opened a new terminal:
 
@@ -92,13 +87,13 @@ By the end of this lab, you will:
     ```
     <!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
 
-    The `orders-api` pods are likely `Running` but failing their readiness probe (the app starts, but `/health` returns an error because it cannot reach the database). They may show `READY 0/1`.
+    The `orders-api` pods are likely `Running` but failing their readiness probe (the app starts, but `/health` returns an error because it cannot reach the database). They may show `READY 0/1`, or restart / `CrashLoopBackOff` once the liveness probe gives up (allow 1–2 minutes).
 
 4. **Tail** the logs of an `orders-api` pod:
 
     ```bash
     POD=$(kubectl -n orders get pods -l app=orders-api -o jsonpath='{.items[0].metadata.name}')
-    kubectl -n orders logs "$POD" --tail=40
+    kubectl -n orders logs "$POD" --tail=40      # container restarted? add --previous
     ```
 <!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
 
@@ -198,7 +193,7 @@ By the end of this lab, you will:
     ```
 <!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
 
-> **Expected Result:** Pods reach `READY 1/1`. Within a minute the **`orders-api DB access (IRSA)`** tile on the board turns **green**, and `Reports flowing` recovers on the next schedule period. The P2 incident's first half is resolved — record the root cause (missing `secretsmanager:GetSecretValue` on the IRSA role) in ServiceNow.
+> **Expected Result:** Pods reach `READY 1/1`. Within a minute the **`orders-api DB access (IRSA)`** tile on the board turns **green**. The P2 incident's first half is resolved — record the root cause (missing `secretsmanager:GetSecretValue` on the IRSA role) in ServiceNow.
 
 ---
 
@@ -223,12 +218,14 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     `Username` field as generic `botocore-session-...` assumed-role sessions — so you cannot
     tell them apart from that column. The real attribution lives one level deeper, in each
     event's `userIdentity.sessionContext.sessionIssuer.userName` (the ROLE behind the
-    session). Pull the full events and tally the calling roles:
+    session). Pull the events for YOUR secret (the account is shared, so filtering
+    on the event name alone returns every student's) and tally the calling roles. CloudTrail can
+    lag up to 15 minutes:
 
     ```bash
     aws cloudtrail lookup-events \
       --region $REGION \
-      --lookup-attributes AttributeKey=EventName,AttributeValue=GetSecretValue \
+      --lookup-attributes AttributeKey=ResourceName,AttributeValue="$SECRET_ARN" \
       --max-items 400 \
       --query 'Events[].CloudTrailEvent' --output json \
     | jq -r '.[] | fromjson | .userIdentity.sessionContext.sessionIssuer.userName' \
@@ -257,7 +254,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     ```bash
     aws configservice select-resource-config \
       --region $REGION \
-      --expression "SELECT resourceId, resourceType, tags WHERE tags.key = 'Rogue'"
+      --expression "SELECT resourceId, resourceType, tags WHERE tags.tag = 'Rogue=true' AND tags.tag = 'Student=$SID'"
     ```
     <!-- source: facts_extracted_v2.md §"AWS Config for Change Correlation" -->
 
@@ -268,7 +265,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     ```bash
     aws ec2 describe-instances \
       --region $REGION \
-      --filters "Name=tag:Rogue,Values=true" \
+      --filters "Name=tag:Rogue,Values=true" "Name=tag:Student,Values=$SID" "Name=instance-state-name,Values=running" \
       --query 'Reservations[].Instances[].{Id:InstanceId,State:State.Name,Ip:PrivateIpAddress}' \
       --output table
     ```
@@ -292,7 +289,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
 
 16. **Confirm** on the board.
 
-> **Expected Result:** Within a minute the **`Rogue contained`** tile turns **green**. Note that **`Aurora: no rogue sessions`** (the Lab 4 band) may also clear once the rogue's existing Postgres sessions age out — but the *definitive* database-side lockout, using `pg_stat_activity` and the Aurora ingress rules, is the subject of **Lab 4**. For now, the instance is contained and the P2 incident is fully resolved. Close it in ServiceNow with the timeline: access-denial root cause, restoration, and rogue containment.
+> **Expected Result:** Within a minute the **`Rogue contained`** tile turns **green**. Note that **`Aurora: no rogue sessions`** (the Lab 4 band) may also clear once the rogue's existing Postgres session ages out (up to ~5 minutes) — but the *definitive* database-side lockout, using `pg_stat_activity` and the Aurora ingress rules, is the subject of **Lab 4**. For now, the instance is contained and the P2 incident is fully resolved. Close it in ServiceNow with the timeline: access-denial root cause, restoration, and rogue containment.
 
 ---
 
@@ -308,7 +305,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
 
 **Question 3:** During the hunt you used CloudTrail and AWS Config for different questions. What does each answer, and why do you need both?
 
-**Answer:** **CloudTrail** is the audit log of API activity — it answers **who** did **what action**, **when**, and **from where** (e.g., the rogue-actor principal reading the Aurora secret every minute). **AWS Config** records the configuration and relationships of resources over time — it answers **what exists / what was created** and lets you enumerate resources by attribute (e.g., everything tagged `Rogue=true`). You need both because attribution (CloudTrail) and footprint enumeration (Config) are different halves of the same investigation: one finds the actor, the other finds the assets.
+**Answer:** **CloudTrail** is the audit log of API activity — it answers **who** did **what action**, **when**, and **from where** (e.g., the rogue-actor principal reading the Aurora secret every few minutes). **AWS Config** records the configuration and relationships of resources over time — it answers **what exists / what was created** and lets you enumerate resources by attribute (e.g., everything tagged `Rogue=true`). You need both because attribution (CloudTrail) and footprint enumeration (Config) are different halves of the same investigation: one finds the actor, the other finds the assets.
 
 ---
 

@@ -114,7 +114,7 @@ resource "aws_iam_role_policy" "lab_host_perms" {
           "logs:*", "cloudwatch:*", "sns:*", "sqs:*", "secretsmanager:*",
           "states:*", "events:*", "scheduler:*", "ssm:*", "cloudtrail:*",
           "config:*", "elasticloadbalancing:*", "autoscaling:*", "dynamodb:*",
-          "ec2-instance-connect:*", "sts:*"
+          "ec2-instance-connect:*", "sts:*", "tiros:*", "pi:*"
         ]
         Resource = "*"
       },
@@ -164,16 +164,16 @@ resource "aws_instance" "lab_host" {
     /tmp/aws/install --update
 
     # Terraform (>= 1.10 required by the stack's versions.tf + S3 backend)
-    curl -fsSL https://releases.hashicorp.com/terraform/1.11.2/terraform_1.11.2_linux_amd64.zip -o /tmp/tf.zip
+    curl -fsSL https://releases.hashicorp.com/terraform/1.17.2/terraform_1.17.2_linux_amd64.zip -o /tmp/tf.zip
     unzip -q -o /tmp/tf.zip -d /usr/local/bin/
     chmod +x /usr/local/bin/terraform
 
-    # kubectl (latest stable -- version-skew tolerant with EKS 1.35)
+    # kubectl (latest stable -- must stay within one minor version of the EKS cluster, 1.37)
     curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl
     chmod +x /usr/local/bin/kubectl
 
     # Helm
-    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-4 | bash
 
     # Repo for this student
     sudo -u ec2-user git clone ${var.repo_url} /home/ec2-user/io-108
@@ -186,7 +186,10 @@ resource "aws_instance" "lab_host" {
 
       cd ~/io-108/lab_environment/lab_env_student
       cp terraform.tfvars.example terraform.tfvars     # set student_id=${each.key}, region=${lookup(var.student_regions, each.key, var.region)}
-      terraform init -backend-config="key=io108/${each.key}/terraform.tfstate"
+      STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \
+        --name /io108/tfstate-bucket --query Parameter.Value --output text)
+      terraform init -backend-config="bucket=$STATE_BUCKET" \
+        -backend-config="key=io108/${each.key}/terraform.tfstate"
       terraform plan  -var scenario=lab1               # then: terraform apply -var scenario=lab1
       ./deploy_app.sh                                  # for labs that need it (2/4/5)
 
@@ -205,6 +208,11 @@ resource "aws_instance" "lab_host" {
   EOT
 
   user_data_replace_on_change = true
+
+  # "Latest AMI" moves; do not replace students' hosts on a later apply.
+  lifecycle {
+    ignore_changes = [ami]
+  }
 
   tags = {
     Name    = "io108-${each.key}-lab-host"

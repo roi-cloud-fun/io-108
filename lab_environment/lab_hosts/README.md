@@ -49,7 +49,11 @@ Give each student their `student_id` and instance (or let them pick their
 ```bash
 cat ~/README-LAB-HOST.txt          # the exact commands for their id
 cd ~/io-108/lab_environment/lab_env_student
-terraform init && terraform apply -var student_id=<id>
+STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \
+  --name /io108/tfstate-bucket --query Parameter.Value --output text)
+terraform init -backend-config="bucket=$STATE_BUCKET" \
+  -backend-config="key=io108/<id>/terraform.tfstate"
+terraform apply -var student_id=<id>
 ./deploy_app.sh && ./verify.sh
 ```
 

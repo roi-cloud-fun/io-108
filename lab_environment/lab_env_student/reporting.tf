@@ -118,9 +118,10 @@ resource "aws_iam_role_policy" "report_lambda" {
 }
 
 data "archive_file" "report_generator" {
-  type        = "zip"
-  source_dir  = "${path.module}/app/lambda_build"
-  output_path = "${path.module}/report_generator.zip"
+  type             = "zip"
+  output_file_mode = "0644" # same hash on Windows and Linux
+  source_dir       = "${path.module}/app/lambda_build"
+  output_path      = "${path.module}/report_generator.zip"
 
   # Keep host build artifacts out of the Lambda package: pip leaves __pycache__
   # bytecode and Google Drive drops desktop.ini into synced folders. Build the

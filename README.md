@@ -47,7 +47,10 @@ A "rogue" instance queries Aurora alongside the legit app — the security throu
 ```bash
 cd lab_environment/lab_env_student
 cp terraform.tfvars.example terraform.tfvars   # set student_id (e.g. s01)
-terraform init
+STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \
+  --name /io108/tfstate-bucket --query Parameter.Value --output text)
+terraform init -backend-config="bucket=$STATE_BUCKET" \
+  -backend-config="key=io108/s01/terraform.tfstate"
 terraform apply -var student_id=s01            # scenario defaults to "healthy"  (~15-20 min; EKS is the long pole)
 ./deploy_app.sh                                 # kubeconfig + helm install + smoke test
 ./verify.sh                                     # Lab 0: PASS/FAIL on every component (your red/green board)
