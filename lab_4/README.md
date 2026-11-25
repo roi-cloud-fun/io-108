@@ -246,7 +246,7 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has held 
     aws logs filter-log-events \
       --log-group-name "/aws/rds/cluster/io108-${STUDENT_ID}-aurora/postgresql" \
       --filter-pattern "\"$ROGUE_IP\"" --region "$REGION" \
-      --query 'events[].message' --output text | tail -10
+      --query 'events[].[message]' --output text | grep 'connection received' | tail -10
     ```
     <!-- source: Module_3_narrative.md §"rogue IP we are hunting" -->
 
@@ -278,9 +278,9 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has held 
     ```
 <!-- source: Module_3_narrative.md §"rogue IP we are hunting" -->
 
-13. **Confirm** no rogue sessions remain. Re-run the `pg_stat_activity` query from Task 4 step 8; the rogue IP should no longer appear (a session already open can linger up to ~5 minutes).
+13. **Confirm** no rogue sessions remain. Re-run the `pg_stat_activity` query from Task 4 step 8; the rogue IP should no longer appear (a session already open can linger up to ~5 minutes, and the tile lags it by another 1-2).
 
-> **Expected Result:** Within 1-2 minutes the **Aurora: no rogue sessions** (`aurora_no_rogue`) tile turns **GREEN**. With the instance stopped, `rogue_contained` goes green too.
+> **Expected Result:** `rogue_contained` goes green within 1-3 minutes. **Aurora: no rogue sessions** (`aurora_no_rogue`) turns **GREEN** once the rogue's last open session expires: allow up to 8 minutes.
 
 > **What Just Happened?** You did not just block an IP - you removed the *path* (the SG ingress rule) and contained the *asset* (the instance). Blocking only the symptom would let the rogue reconnect from a new address; removing the authorized path and stopping the instance closes the incident.
 

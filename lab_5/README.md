@@ -68,7 +68,7 @@ Run from a local clone or AWS CloudShell.
     cd lab_environment/lab_env_student
     terraform plan  -var scenario=lab5                       # student_id + region from terraform.tfvars (Lab 0)
     terraform apply -var scenario=lab5 -auto-approve
-    ./deploy_app.sh          # waits ~5 min, then warns orders-api is not Ready: expected here
+    ./deploy_app.sh          # may finish quickly, or wait ~5 min and warn orders-api is not Ready: both fine
     ```
 <!-- source: course_outline_v3.md §"Lab 5" -->
 
@@ -95,7 +95,7 @@ Run from a local clone or AWS CloudShell.
 
 ## Task 1: Lead with the Board — Scope and Order the Incident
 
-1. **Open** your incident board (`$DASHBOARD`). Note **every** red tile. You should see (at minimum): `app_path_reachable`, `tgw_or_network_ok`, `orders_api_db_access`, `eks_pod_internet`, `eks_pod_dns`, `aurora_no_rogue`, `rogue_contained`.
+1. **Open** your incident board (`$DASHBOARD`). Note **every** red tile. You should see (at minimum): `app_path_reachable`, `tgw_or_network_ok`, `orders_api_db_access`, `eks_pod_internet`, `eks_pod_dns`, `aurora_no_rogue`, `rogue_contained`. The two `eks_pod_*` tiles go red last, 5–8 minutes after the deploy.
 
 2. **Decide a triage order.** A defensible order:
 
@@ -219,7 +219,7 @@ The `orders_api_db_access` tile is red because the orders-api IRSA role was stri
 11. **Restore** the role's inline policy. Recreate the permissions the healthy role carries:
 
     ```bash
-    cat > /tmp/orders_api_restore.json <<JSON
+    aws iam put-role-policy --role-name "$IRSA_ROLE" \n      --policy-name "io108-${STUDENT_ID}-orders-api-inline" \n      --policy-document "$(cat <<JSON
     {
       "Version": "2012-10-17",
       "Statement": [
@@ -231,21 +231,11 @@ The `orders_api_db_access` tile is red because the orders-api IRSA role was stri
       ]
     }
     JSON
-    aws iam put-role-policy --role-name "$IRSA_ROLE" \
-      --policy-name "io108-${STUDENT_ID}-orders-api-inline" \
-      --policy-document file:///tmp/orders_api_restore.json
+    )"
     ```
 <!-- source: course_outline_v3.md §"IAM/IRSA policy analysis" -->
 
-12. **Restart** the orders-api so pods pick up fresh credentials via IRSA:
-
-    ```bash
-    kubectl -n orders rollout restart deploy/orders-api
-    kubectl -n orders rollout status deploy/orders-api --timeout=180s
-    ```
-<!-- source: content/narratives/Module_3_narrative.md §"pods get their AWS permissions through IRSA" -->
-
-> **Expected Result:** **`orders_api_db_access`** turns **GREEN** within a cycle. (Refer back to Lab 1 for the full diagnosis of how you would *find* this from `AccessDenied` if it were not already localized for you.)
+> **Expected Result:** **`orders_api_db_access`** turns **GREEN** within a cycle or two (the probe asks IAM directly). Leave the pods alone for now: they install packages at startup, so they cannot come back until Task 6 restores egress. (Refer back to Lab 1 for the full diagnosis of how you would *find* this from `AccessDenied` if it were not already localized for you.)
 
 ---
 
@@ -253,7 +243,7 @@ The `orders_api_db_access` tile is red because the orders-api IRSA role was stri
 
 The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny egress **Kubernetes NetworkPolicy** is cutting pod egress (so the in-cluster conncheck CronJob cannot reach the internet or DNS, and its metrics stop publishing).
 
-13. **List** the NetworkPolicies in the `orders` namespace and find the default-deny:
+12. **List** the NetworkPolicies in the `orders` namespace and find the default-deny:
 
     ```bash
     kubectl -n orders get networkpolicy
@@ -261,7 +251,7 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
     ```
 <!-- source: content/narratives/Module_1_narrative.md §"resolve DNS and reach the internet" -->
 
-14. **Remove** the default-deny by redeploying the chart with the policy disabled (the clean, declarative fix):
+13. **Remove** the default-deny by redeploying the chart with the policy disabled (the clean, declarative fix):
 
     ```bash
     helm upgrade orders charts/orders --namespace orders --reuse-values \
@@ -270,6 +260,14 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
     <!-- source: content/narratives/Module_1_narrative.md §"deployed with Helm" -->
 
     (If you need an immediate manual fix instead, `kubectl -n orders delete networkpolicy <default-deny-name>` clears it; the declarative helm change is preferred so the next deploy does not reintroduce it.)
+
+14. **Restart** the orders-api so it starts cleanly with both fixes (IAM and egress) in place:
+
+    ```bash
+    kubectl -n orders rollout restart deploy/orders-api
+    kubectl -n orders rollout status deploy/orders-api --timeout=180s
+    ```
+<!-- source: content/narratives/Module_3_narrative.md §"pods get their AWS permissions through IRSA" -->
 
 > **Expected Result:** **`eks_pod_internet`** and **`eks_pod_dns`** turn **GREEN** once the conncheck CronJob's egress is restored and it resumes publishing metrics.
 
@@ -291,7 +289,7 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
     ```
 <!-- source: content/narratives/Module_1_narrative.md §"containing the rogue" -->
 
-> **Expected Result:** **`aurora_no_rogue`** and **`rogue_contained`** turn **GREEN**.
+> **Expected Result:** **`rogue_contained`** turns **GREEN** within 1-3 minutes, **`aurora_no_rogue`** within about 8 (its open session has to expire).
 
 ---
 
@@ -316,7 +314,7 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
       - IAM: orders-api IRSA role missing Aurora-secret + S3 permissions (AccessDenied).
       - Pod network: default-deny egress NetworkPolicy cut pod egress / DNS.
       - Security: rogue instance with stolen credentials querying Aurora.
-    - **Remediation:** delete the misroute; restore the IRSA inline policy + restart; disable the default-deny NetworkPolicy; revoke the rogue SG path + stop the instance.
+    - **Remediation:** delete the misroute; restore the IRSA inline policy; disable the default-deny NetworkPolicy + restart the pods; revoke the rogue SG path + stop the instance.
     - **Follow-ups / prevention:** guardrails on route-table changes, IAM policy drift detection, NetworkPolicy review in CI, and how the rogue obtained credentials (feed to security).
 
 > **Expected Result:** A complete ServiceNow incident record a teammate could read cold and understand what broke, what you did, and what should change so it does not recur.
@@ -331,11 +329,11 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
 
 ### `orders_api_db_access` stays red
 
-**Check:** Confirm `aws iam get-role-policy --role-name "$IRSA_ROLE" --policy-name "io108-${STUDENT_ID}-orders-api-inline"` shows the secret + S3 statements, and that you restarted the deployment so pods re-assumed the role.
+**Check:** Confirm `aws iam get-role-policy --role-name "$IRSA_ROLE" --policy-name "io108-${STUDENT_ID}-orders-api-inline"` shows the secret + S3 statements. (Pods still failing after Task 6? Re-run the step 14 restart.)
 
 ### Pod tiles stay red
 
-**Check:** `kubectl -n orders get networkpolicy` should no longer show a default-deny. The conncheck CronJob runs every minute; give it a cycle to republish metrics. (After the *apply*, these two tiles take ~5 minutes to go red.)
+**Check:** `kubectl -n orders get networkpolicy` should no longer show a default-deny. The conncheck CronJob runs every minute; give it a cycle to republish metrics. (After the *apply*, these two tiles take 5–8 minutes to go red.)
 
 ---
 

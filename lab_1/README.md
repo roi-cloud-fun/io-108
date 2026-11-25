@@ -289,7 +289,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
 
 16. **Confirm** on the board.
 
-> **Expected Result:** Within a minute the **`Rogue contained`** tile turns **green**. Note that **`Aurora: no rogue sessions`** (the Lab 4 band) may also clear once the rogue's existing Postgres session ages out (up to ~5 minutes) — but the *definitive* database-side lockout, using `pg_stat_activity` and the Aurora ingress rules, is the subject of **Lab 4**. For now, the instance is contained and the P2 incident is fully resolved. Close it in ServiceNow with the timeline: access-denial root cause, restoration, and rogue containment.
+> **Expected Result:** Within a minute the **`Rogue contained`** tile turns **green**. Note that **`Aurora: no rogue sessions`** (the Lab 4 band) may also clear once the rogue's existing Postgres session ages out (allow up to 8 minutes) — but the *definitive* database-side lockout, using `pg_stat_activity` and the Aurora ingress rules, is the subject of **Lab 4**. For now, the instance is contained and the P2 incident is fully resolved. Close it in ServiceNow with the timeline: access-denial root cause, restoration, and rogue containment.
 
 ---
 

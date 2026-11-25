@@ -51,6 +51,9 @@ By the end of this lab, you will:
 
 1. **Open** a terminal on your lab host (workstation, AWS CloudShell, or the provided EC2 lab box) with the AWS CLI configured for the training account.
 
+   > **Windows Git Bash only:** also run `export MSYS_NO_PATHCONV=1`, or names such as
+   > `/io108/tfstate-bucket` get rewritten into Windows paths and lookups fail with `ParameterNotFound`.
+
 2. **Set** two shell variables you will reuse all day. Replace `sNN` with the student id your instructor assigned (for example `s07`):
 
     ```bash

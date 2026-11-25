@@ -44,7 +44,7 @@ The `terraform apply` scales your managed node group to **zero**; the `./deploy_
 re-deploy applies the default-deny egress NetworkPolicy to the `orders` namespace (the policy
 is delivered by the Helm chart, so the redeploy is required — terraform alone does not apply
 it). `EKS pods schedulable` goes red within about two minutes;
-`Pod → internet` and `Pod → DNS` follow in about 5 minutes (they turn red on missing data). (`deploy_app.sh` will warn that the
+`Pod → internet` and `Pod → DNS` follow in about 5–8 minutes (they turn red on missing data). (`deploy_app.sh` will warn that the
 `orders-api` rollout did not complete — that is expected with zero nodes; it continues anyway.)
 
 ---
@@ -88,7 +88,7 @@ By the end of this lab, you will:
     ```
     <!-- source: Lab_2_narrative.md §"kubectl get pods" -->
 
-    You will see `orders-api` and `worker` pods in **`Pending`** — and, importantly, they are not `CrashLoopBackOff` or `ImagePullBackOff`. `Pending` means the scheduler has not been able to place the pod on a node at all. The distinction matters: `Pending` is a *placement* problem, not an *application* problem.
+    You will see `orders-api` and `worker` pods in **`Pending`** — and, importantly, they are not `CrashLoopBackOff` or `ImagePullBackOff`. `Pending` means the scheduler has not been able to place the pod on a node at all. The distinction matters: `Pending` is a *placement* problem, not an *application* problem. (Pods still `Running`? The nodes have not started draining yet: wait 1–2 minutes before step 4, and do not move on to the fix.)
 
 4. **Describe** a Pending pod and read its **Events** — the scheduler writes the reason there:
 
@@ -124,7 +124,7 @@ By the end of this lab, you will:
     ```
     <!-- source: Lab_2_narrative.md §"kubectl get nodes" -->
 
-    Expect **`No resources found`** — there are no worker nodes registered. (Nodes still draining show `Ready,SchedulingDisabled` for a few minutes; re-run until they are gone.)
+    Expect **`No resources found`** — there are no worker nodes registered. (Nodes still draining show `Ready,SchedulingDisabled` for up to ~15 minutes; that already means no capacity, so you can continue.)
 
 7. **Confirm** at the source: inspect the managed node group's scaling configuration via the EKS API:
 
