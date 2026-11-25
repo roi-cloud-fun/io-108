@@ -7,7 +7,7 @@
 | **Duration** | 45 minutes |
 | **Difficulty** | Intermediate |
 | **Severity** | **P2** (degraded service — reports stalled, no data loss) |
-| **Prerequisites** | Lab 0 complete: the stack is deployed, `deploy_app.sh` has run, and your incident board was green except the two known rogue tiles. AWS CLI v2, `kubectl`, `jq`. |
+| **Prerequisites** | Lab 0 complete (by you or by your instructor): the stack is deployed, `deploy_app.sh` has run, and your incident board was green except the two known rogue tiles. AWS CLI v2, `kubectl`, `jq`. |
 | **Builds On** | Lab 0 (the connected application and the incident board) |
 
 ---
@@ -25,6 +25,61 @@ Both halves are driven by tiles on your board. The access-denial fix turns **`or
 
 ---
 
+## Start Here: Connect to Your Lab Host
+
+Your instructor has already built your stack (Lab 0) and given you a student id, a region, and an EC2 **lab host** with every tool installed. Do this once. Run **everything** in this course from the lab host, because your cluster only accepts `kubectl` from the machine that last ran `terraform apply`.
+
+> **Built Lab 0 yourself?** If you did it on this same machine, skip to the Scenario.
+
+1. **Connect.** In the AWS console, open **Systems Manager → Session Manager → Start session**, in the region your instructor gives you for the hosts. Select **`io108-<your-id>-lab-host`** and choose **Start session**.
+
+2. **Switch** to the user that owns the lab files. Do this every time you connect:
+
+    ```bash
+    sudo su - ec2-user
+    ```
+
+3. **Set** your student id and region, and save them so they survive a reconnect:
+
+    ```bash
+    export SID=sNN                # <- your assigned student id, e.g. s01
+    export REGION=us-east-1       # <- your assigned region
+    echo "export SID=$SID REGION=$REGION" >> ~/.bashrc
+    ```
+
+4. **Connect** Terraform to your stack's remote state:
+
+    ```bash
+    cd ~/io-108/lab_environment/lab_env_student
+    cp terraform.tfvars.example terraform.tfvars
+    sed -i "s/^student_id.*/student_id = \"$SID\"/; s/^region.*/region = \"$REGION\"/" terraform.tfvars
+    STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \
+      --name /io108/tfstate-bucket --query Parameter.Value --output text)
+    terraform init -backend-config="bucket=$STATE_BUCKET" \
+      -backend-config="key=io108/$SID/terraform.tfstate"
+    ```
+
+5. **Apply** the healthy baseline. This gives your lab host access to the cluster and takes a minute or two:
+
+    ```bash
+    terraform apply -var scenario=healthy
+    ```
+
+    Expect a small plan of about **2 to add, 2 to destroy** (the `aws_eks_access_*` resources). Type **yes**. **If it wants to create 100+ resources, answer no and tell your instructor:** your id, region or state key is wrong.
+
+6. **Set up** `kubectl` and **verify** the baseline:
+
+    ```bash
+    aws eks update-kubeconfig --name "$(terraform output -raw cluster_name)" --region $REGION
+    ./verify.sh
+    ```
+
+> **Expected Result:** `ALL CHECKS PASSED`. In **CloudWatch → Dashboards → `io108-<your-id>-incident-board`** (your assigned region), every tile is green **except** `Rogue contained` and `Aurora: no rogue sessions`. Those two are red on purpose. Skim **Lab 0, Task 6** for what each tile means.
+
+> **Reconnecting later?** Sessions time out when idle. Start a new session, run `sudo su - ec2-user`, then `cd ~/io-108/lab_environment/lab_env_student`, and re-run the variable block near the top of the lab you are on. You do not need to repeat steps 3–6.
+
+---
+
 ## Scenario
 
 It is mid-morning. A monitoring alert fires and your **`orders-api DB access (IRSA)`** tile on the incident board has gone **red**. The order-processing API is returning errors and the scheduled reports have stopped landing in S3. No deployment went out; nothing changed in the application code.
@@ -34,13 +89,13 @@ You open a **P2** incident in **ServiceNow** — the service is degraded but the
 **To inject this incident** (instructor-led, or self-serve), re-apply your stack in the `lab1` scenario:
 
 ```bash
-cd lab_environment/lab_env_student
+cd ~/io-108/lab_environment/lab_env_student
 terraform plan  -var scenario=lab1     # student_id + region come from your terraform.tfvars (Lab 0)
 terraform apply -var scenario=lab1
 ```
 <!-- source: course_outline_v3.md §"Lab 1: IAM Access Denial Investigation" -->
 
-> **New machine or fresh clone since Lab 0?** Recreate `terraform.tfvars` (your `student_id` and `region`) and re-run the `terraform init` from Lab 0, Task 2 before the commands above.
+> **New machine or fresh clone?** Do **Start Here** (steps 3–6) first. If your clone is not at `~/io-108`, adjust the `cd` path.
 
 This swaps the `orders-api` IRSA role's policy for one that is **missing** the Aurora-secret read and the S3 object permissions. Within a minute the board tile goes red.
 

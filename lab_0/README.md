@@ -114,6 +114,7 @@ By the end of this lab, you will:
     > plan` will show only a few changes, mainly `aws_eks_access_entry` being replaced so that **your**
     > identity gets cluster access. Run the apply (a minute or two); `kubectl` is denied until you do.
     > If the plan wants to create 100+ resources, stop: your `init` points at the wrong state key.
+    > Connecting to a lab host for the first time? **Lab 1, Start Here** has the full steps.
 
     Review the plan and type **yes** to confirm. This provisions your VPC (public/private subnets, NAT), the EKS cluster and managed node group, the Aurora cluster, the reporting Lambda and Step Functions workflow, the S3 report and sink buckets, the health-checker Lambda, the alarms, and **both** CloudWatch dashboards.
 

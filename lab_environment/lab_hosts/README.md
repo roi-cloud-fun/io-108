@@ -11,9 +11,9 @@ Manager** (no SSH keys — safe on a shared account).
 The student stack's EKS access entry follows the **caller identity**
 (`lab_env_student/eks.tf` → `apply_host_principal_arn`). When a student runs
 `terraform apply` **from their host**, that host's role becomes the cluster admin
-automatically, so `kubectl` works with no extra config. **Students must run everything —
-including the first `terraform apply` — from the host, not CloudShell**, or the access
-entry points at the wrong principal.
+automatically, so `kubectl` works with no extra config. **Students must run everything from the host, not CloudShell**, or the access
+entry points at the wrong principal. If the instructor pre-builds the stack, the student's first
+`terraform apply -var scenario=healthy` from the host moves the access entry to them.
 
 ## Use (instructor, once per account)
 
@@ -44,9 +44,11 @@ checked). If you want Lab 1's AWS Config query to work, apply `lab_env_shared` i
 (or rely on the EC2 tag-search fallback, which needs no Config).
 
 Give each student their `student_id` and instance (or let them pick their
-`io108-<id>-lab-host` in the Systems Manager → Session Manager console). Then on the host:
+`io108-<id>-lab-host` in the Systems Manager → Session Manager console). If you pre-built
+Lab 0, send students straight to **Lab 1, Start Here**, which walks through all of this. On the host:
 
 ```bash
+sudo su - ec2-user                 # Session Manager logs in as ssm-user; the repo is ec2-user's
 cat ~/README-LAB-HOST.txt          # the exact commands for their id
 cd ~/io-108/lab_environment/lab_env_student
 STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \

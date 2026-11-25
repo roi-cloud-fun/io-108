@@ -181,7 +181,8 @@ resource "aws_instance" "lab_host" {
     cat > /home/ec2-user/README-LAB-HOST.txt <<'HINT'
     IO-108 lab host for student ${each.key}.  Your assigned region: ${lookup(var.student_regions, each.key, var.region)}
 
-    Run EVERYTHING from here. Your stack is already deployed (Lab 0 done); connect to your
+    You must be ec2-user: after each connect run  sudo su - ec2-user
+    Run EVERYTHING from here. Full steps: Lab 1, "Start Here". Your stack is already deployed (Lab 0 done); connect to your
     remote state and run the incident labs:
 
       cd ~/io-108/lab_environment/lab_env_student
@@ -190,8 +191,9 @@ resource "aws_instance" "lab_host" {
         --name /io108/tfstate-bucket --query Parameter.Value --output text)
       terraform init -backend-config="bucket=$STATE_BUCKET" \
         -backend-config="key=io108/${each.key}/terraform.tfstate"
-      terraform plan  -var scenario=lab1               # then: terraform apply -var scenario=lab1
-      ./deploy_app.sh                                  # for labs that need it (2/4/5)
+      terraform apply -var scenario=healthy            # once: gives this host kubectl access
+      terraform apply -var scenario=lab1               # then follow the Lab 1 guide
+      ./deploy_app.sh                                  # for labs that need it (2/3/4/5)
 
     This host and your stack are BOTH in ${lookup(var.student_regions, each.key, var.region)};
     AWS_DEFAULT_REGION is already set to it, so no --region needed.
