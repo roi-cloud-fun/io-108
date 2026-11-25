@@ -219,7 +219,9 @@ The `orders_api_db_access` tile is red because the orders-api IRSA role was stri
 11. **Restore** the role's inline policy. Recreate the permissions the healthy role carries:
 
     ```bash
-    aws iam put-role-policy --role-name "$IRSA_ROLE" \n      --policy-name "io108-${STUDENT_ID}-orders-api-inline" \n      --policy-document "$(cat <<JSON
+    aws iam put-role-policy --role-name "$IRSA_ROLE" \
+      --policy-name "io108-${STUDENT_ID}-orders-api-inline" \
+      --policy-document "$(cat <<JSON
     {
       "Version": "2012-10-17",
       "Statement": [

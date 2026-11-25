@@ -57,6 +57,18 @@ helm upgrade --install orders charts/orders \
 # injects, so every redeploy starts from the chart's own policies only.
 kubectl -n orders delete networkpolicy orders-allow-egress --ignore-not-found
 
+# Pods left crash-looping by an earlier incident sit in back-off for up to 5
+# minutes and stall the rollout. Where the app is meant to work, restart them.
+case "$SCENARIO" in
+  healthy|lab3|lab4)
+    READY=$(kubectl -n orders get deploy orders-api -o jsonpath='{.status.readyReplicas}')
+    WANT=$(kubectl -n orders get deploy orders-api -o jsonpath='{.spec.replicas}')
+    if [ "${READY:-0}" -lt "$WANT" ] && [ "$(kubectl -n orders get pods -l app=orders-api -o jsonpath='{.items[*].status.containerStatuses[*].restartCount}' | tr -d ' 0')" != "" ]; then
+      echo "==> Restarting crash-looping orders-api pods"
+      kubectl -n orders delete pods -l app=orders-api --wait=false
+    fi ;;
+esac
+
 echo "==> Waiting for orders-api rollout (pip install at startup takes a minute)"
 # Under a fault scenario the app is MEANT to be broken (lab2: pods Pending for
 # lack of capacity; lab1: IRSA AccessDenied so /health 503s), so a failed rollout
