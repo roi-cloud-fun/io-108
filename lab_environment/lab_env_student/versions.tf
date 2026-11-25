@@ -13,18 +13,20 @@
 terraform {
   required_version = ">= 1.10"
 
-  # Central per-student remote state. bucket + region are fixed for the class;
-  # each student passes their own key at init:
-  #   terraform init -backend-config="key=io108/<student_id>/terraform.tfstate"
+  # Central per-student remote state. The bucket (random suffix) is created by
+  # lab_env_state and published to SSM; bucket + key are passed at init:
+  #   STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \
+  #     --name /io108/tfstate-bucket --query Parameter.Value --output text)
+  #   terraform init -backend-config="bucket=$STATE_BUCKET" \
+  #     -backend-config="key=io108/<student_id>/terraform.tfstate"
   backend "s3" {
-    bucket = "io108-tfstate-587721667383"
     region = "us-east-1"
   }
 
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.100"
+      version = "~> 6.74"
     }
     random = {
       source  = "hashicorp/random"

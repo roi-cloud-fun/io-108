@@ -138,7 +138,7 @@ resource "aws_vpc_security_group_ingress_rule" "aurora_from_rogue" {
   # nothing) and aborts the apply before later resources (e.g. the Lab 5
   # capstone misroute) are created. Ignoring tag drift keeps the rule stable.
   lifecycle {
-    ignore_changes = [tags, tags_all]
+    ignore_changes = [tags]
   }
 }
 
@@ -168,7 +168,7 @@ resource "aws_instance" "rogue" {
     dnf install -y postgresql15 unzip
 
     # AWS CLI v2 (not shipped on AL2023 by default).
-    curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
+    curl -fsSL --retry 10 --retry-all-errors --connect-timeout 10 "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscli.zip
     unzip -q /tmp/awscli.zip -d /tmp
     /tmp/aws/install
 
@@ -214,10 +214,28 @@ resource "aws_instance" "rogue" {
 
   user_data_replace_on_change = true
 
+  # "Latest AMI" moves; do not replace the rogue (new id + IP) mid-course.
+  lifecycle {
+    ignore_changes = [ami]
+  }
+
+  # user_data downloads packages at first boot, so the NAT path must exist first
+  # or the bootstrap dies and the rogue never connects to Aurora.
+  depends_on = [aws_route.private_default, aws_route_table_association.private]
+
   tags = {
     Name = "${local.name_prefix}-rogue"
     # Same discoverability hooks as the role -- this is the asset Lab 1 finds.
     Rogue = "true"
     Note  = "unauthorized-instance-investigate-in-lab1"
   }
+}
+
+# The student stops the rogue in Lab 1, but Labs 4 and 5 hunt it again: applying
+# those scenarios (or healthy / lab1) starts it. Labs 2 and 3 leave it as found.
+resource "aws_ec2_instance_state" "rogue" {
+  count = contains(["lab2", "lab3"], var.scenario) ? 0 : 1
+
+  instance_id = aws_instance.rogue.id
+  state       = "running"
 }

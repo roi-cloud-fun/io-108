@@ -3,7 +3,7 @@
 #
 # LAB 3 ADD-ON: the event DISTRIBUTION / fan-out pipeline.
 #
-#   CloudWatch Alarm (report-generator errors)  ----\
+#   CloudWatch Alarm (report workflow failed)    ----\
 #                                                     >--> EventBridge rule
 #   EventBridge heartbeat (rate 2 min, synthetic) ---/         |
 #                                                              v
@@ -92,9 +92,10 @@ resource "aws_iam_role_policy" "fanout_forwarder" {
 }
 
 data "archive_file" "fanout_forwarder" {
-  type        = "zip"
-  source_file = "${path.module}/app/fanout_forwarder.py"
-  output_path = "${path.module}/fanout_forwarder.zip"
+  type             = "zip"
+  output_file_mode = "0644" # same hash on Windows and Linux
+  source_file      = "${path.module}/app/fanout_forwarder.py"
+  output_path      = "${path.module}/fanout_forwarder.zip"
 }
 
 resource "aws_lambda_function" "fanout_forwarder" {
@@ -178,7 +179,7 @@ resource "aws_sfn_state_machine" "fanout" {
                 Resource = "arn:aws:states:::sqs:sendMessage"
                 Parameters = {
                   QueueUrl    = aws_sqs_queue.fanout["newrelic"].url
-                  MessageBody = jsonencode({ destination = "newrelic", note = "io108 fan-out event" })
+                  MessageBody = { destination = "newrelic", "event.$" = "$" }
                 }
                 End = true
               }
@@ -192,7 +193,7 @@ resource "aws_sfn_state_machine" "fanout" {
                 Resource = "arn:aws:states:::sqs:sendMessage"
                 Parameters = {
                   QueueUrl    = aws_sqs_queue.fanout["solarwinds"].url
-                  MessageBody = jsonencode({ destination = "solarwinds", note = "io108 fan-out event" })
+                  MessageBody = { destination = "solarwinds", "event.$" = "$" }
                 }
                 End = true
               }
@@ -208,13 +209,13 @@ resource "aws_sfn_state_machine" "fanout" {
 # Triggers: a CloudWatch alarm (real incident) + a heartbeat (steady-state green)
 # ----------------------------------------------------------------------------
 
-# Dedicated alarm that drives the fan-out. Fires on report-generator errors --
-# which is what Lab 3's throttle ultimately produces once retries are exhausted.
+# Dedicated alarm that drives the fan-out. Watches FAILED WORKFLOW EXECUTIONS,
+# not Lambda Errors: a throttled function never runs, so Errors stays at zero.
 resource "aws_cloudwatch_metric_alarm" "fanout_trigger" {
   alarm_name          = "${local.name_prefix}-fanout-trigger"
   alarm_description   = "IO-108 -- report pipeline incident; fan out to monitoring sinks"
-  namespace           = "AWS/Lambda"
-  metric_name         = "Errors"
+  namespace           = "AWS/States"
+  metric_name         = "ExecutionsFailed"
   statistic           = "Sum"
   period              = 60
   evaluation_periods  = 1
@@ -223,7 +224,7 @@ resource "aws_cloudwatch_metric_alarm" "fanout_trigger" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    FunctionName = aws_lambda_function.report_generator.function_name
+    StateMachineArn = aws_sfn_state_machine.report_workflow.arn
   }
 }
 

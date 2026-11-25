@@ -45,7 +45,7 @@ resource "aws_vpc_security_group_ingress_rule" "aurora_from_eks" {
   tags = { Name = "${local.name_prefix}-aurora-from-eks" }
 
   lifecycle {
-    ignore_changes = [tags, tags_all]
+    ignore_changes = [tags]
   }
 }
 
@@ -60,14 +60,14 @@ resource "aws_vpc_security_group_ingress_rule" "aurora_from_lambda" {
   tags = { Name = "${local.name_prefix}-aurora-from-lambda" }
 
   lifecycle {
-    ignore_changes = [tags, tags_all]
+    ignore_changes = [tags]
   }
 }
 
 resource "aws_rds_cluster" "main" {
   cluster_identifier = "${local.name_prefix}-aurora"
   engine             = "aurora-postgresql"
-  engine_version     = "16.8"
+  engine_version     = "16.15"
   database_name      = "orders"
 
   master_username             = "orders_admin"

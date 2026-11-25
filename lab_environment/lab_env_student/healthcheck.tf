@@ -133,7 +133,7 @@ resource "aws_vpc_security_group_ingress_rule" "aurora_from_health_checker" {
   # SG ingress rule can fail and leave the rule destroyed, cutting the
   # health-checker's Aurora path (false-red aurora_* tiles). Keep it tag-stable.
   lifecycle {
-    ignore_changes = [tags, tags_all]
+    ignore_changes = [tags]
   }
 }
 
@@ -218,9 +218,10 @@ resource "aws_iam_role_policy" "health_checker" {
 }
 
 data "archive_file" "health_checker" {
-  type        = "zip"
-  source_dir  = "${path.module}/app/lambda_build"
-  output_path = "${path.module}/health_checker.zip"
+  type             = "zip"
+  output_file_mode = "0644" # same hash on Windows and Linux
+  source_dir       = "${path.module}/app/lambda_build"
+  output_path      = "${path.module}/health_checker.zip"
 
   # Same host-pollution backstop as reporting.tf's archive.
   excludes = [

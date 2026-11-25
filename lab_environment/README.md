@@ -19,6 +19,7 @@ CloudTrail + AWS Config (shared, once per account): change audit for every lab
 
 | Path | Who runs it | What |
 |------|-------------|------|
+| `lab_env_state/` | Instructor, ONCE per account, FIRST | Terraform state bucket (random suffix) + SSM parameter |
 | `lab_env_shared/` | Instructor, ONCE per account/region | CloudTrail trail + AWS Config recorder/rules |
 | `lab_env_student/` | Each student | VPC, EKS, Aurora, Lambda/SFN reporting, monitoring |
 | `lab_env_student/deploy_app.sh` | Each student, after apply | kubeconfig + helm install + smoke test |
@@ -43,6 +44,19 @@ CloudTrail + AWS Config (shared, once per account): change audit for every lab
 > apply ~15 min, all `verify.sh` checks PASS including the EventBridge → Step
 > Functions → Lambda → Aurora → S3 report pipeline).
 
+## Instructor: state bucket (once, before Lab 0)
+
+```bash
+cd lab_env_state
+terraform init
+terraform apply
+```
+
+The bucket name gets a random suffix and is published to the SSM parameter
+`/io108/tfstate-bucket` (us-east-1), where students look it up at init. Keep
+this module's local state until teardown, and use a fresh clone per account:
+leftover local state from another account will break the apply.
+
 ## Instructor: shared audit layer (once)
 
 ```bash
@@ -60,7 +74,10 @@ Both default to `true`.
 
 ```bash
 cd lab_env_student
-terraform init
+STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \
+  --name /io108/tfstate-bucket --query Parameter.Value --output text)
+terraform init -backend-config="bucket=$STATE_BUCKET" \
+  -backend-config="key=io108/s01/terraform.tfstate"
 terraform apply -var student_id=s01        # ~20-25 min (EKS + Aurora dominate)
 ./deploy_app.sh                             # kubeconfig + helm + smoke test
 ./verify.sh                                 # Lab 0: PASS/FAIL on every component
@@ -97,6 +114,20 @@ for leftover ENIs in the VPC.
 > releases several minutes after the function is deleted; they hold the SG and
 > subnet until then. Terraform retries automatically and completes cleanly
 > (verified 2026-06-15: 58 destroyed, 0 errors). Don't Ctrl-C it.
+
+### Instructor teardown (after every student stack is gone)
+
+Destroy `lab_env_shared`, then `lab_env_state` (this deletes ALL student state).
+
+> **Accounts under an organization SCP** may deny `cloudtrail:DeleteTrail` and
+> `config:StopConfigurationRecorder`, so `lab_env_shared` cannot be destroyed there
+> and a partial destroy removes its other resources. Leave that layer in place; if
+> you did run the destroy, run `terraform apply` again to restore it. Keep its local
+> state: a later deploy without it must use `-var enable_cloudtrail=false
+> -var enable_config=false`.
+
+EKS, Lambda and Container Insights log groups survive `terraform destroy`; delete
+`/aws/{eks,lambda,rds/cluster,containerinsights}/io108-<id>-*` if you want them gone.
 
 ## Cost (us-east-1 list prices, approximate)
 

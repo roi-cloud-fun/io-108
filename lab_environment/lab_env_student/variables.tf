@@ -56,7 +56,7 @@ variable "vpc_cidr" {
 variable "eks_version" {
   description = "Kubernetes version for the EKS cluster. Keep this on an EKS STANDARD-support version -- older versions (e.g. 1.31) fall into EKS extended support, which adds ~$0.60/hr per cluster on top of the base rate."
   type        = string
-  default     = "1.35"
+  default     = "1.37"
 }
 
 variable "node_instance_type" {

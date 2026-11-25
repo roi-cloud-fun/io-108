@@ -261,11 +261,9 @@ def probe_app_path_reachable():
 
 
 def probe_tgw_or_network_ok():
-    """Basic egress-path health: the VPC has at least one available NAT gateway.
-
-    Keep-it-simple network reachability signal derivable from a single describe
-    call. Lab 5 / capstone extends this into Reachability-Analyzer + route/TGW
-    checks; for the backbone, "the path off the VPC is up" is enough."""
+    """Private egress path: an available NAT gateway, an active default route to
+    it, and no private route that leaves via an internet gateway (the Lab 5
+    misroute -- a blackhole for instances with no public IP)."""
     vpc_id = os.environ.get("VPC_ID", "").strip()
     if not vpc_id:
         return 1
@@ -275,7 +273,22 @@ def probe_tgw_or_network_ok():
             {"Name": "state", "Values": ["available"]},
         ]
     )
-    return 1 if resp.get("NatGateways") else 0
+    if not resp.get("NatGateways"):
+        return 0
+    rt_id = os.environ.get("PRIVATE_RT_ID", "").strip()
+    if not rt_id:
+        return 1
+    tables = _ec2.describe_route_tables(RouteTableIds=[rt_id]).get("RouteTables") or []
+    routes = tables[0].get("Routes", []) if tables else []
+    if any(str(r.get("GatewayId", "")).startswith("igw-") for r in routes):
+        return 0
+    default_ok = any(
+        r.get("DestinationCidrBlock") == "0.0.0.0/0"
+        and r.get("NatGatewayId")
+        and r.get("State") == "active"
+        for r in routes
+    )
+    return 1 if default_ok else 0
 
 
 # Ordered probe registry. Metric name == alarm suffix == dashboard tile title.

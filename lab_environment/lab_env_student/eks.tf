@@ -164,7 +164,11 @@ resource "aws_eks_node_group" "main" {
   # (Re-running `terraform apply` while still on scenario=lab2 would re-inject
   # the fault -- that is expected, not a regression.)
 
-  depends_on = [aws_iam_role_policy_attachment.eks_nodes]
+  depends_on = [
+    aws_iam_role_policy_attachment.eks_nodes,
+    aws_route.private_default, # nodes need NAT to join the cluster
+    aws_route_table_association.private,
+  ]
 }
 
 # ----------------------------------------------------------------------------
@@ -201,6 +205,12 @@ resource "aws_eks_addon" "coredns" {
 resource "aws_eks_addon" "cloudwatch_observability" {
   cluster_name = aws_eks_cluster.main.name
   addon_name   = "amazon-cloudwatch-observability"
+
+  # Metrics and logs only. The add-on otherwise injects four tracing init
+  # containers into every pod, which clutters the Lab 1/2 kubectl output.
+  configuration_values = jsonencode({
+    manager = { applicationSignals = { autoMonitor = { monitorAllServices = false } } }
+  })
 
   depends_on = [aws_eks_node_group.main]
 }

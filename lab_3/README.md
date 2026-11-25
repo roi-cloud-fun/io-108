@@ -87,6 +87,8 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
     echo "Report SFN:  $SFN_ARN"
     ```
 
+> **Expect a wait:** `reports_flowing` turns red once the newest report is over 10 minutes old, so allow **about 10 minutes** after the apply. Executions start failing at the next 5-minute schedule.
+
 > **Note:** The metrics-based tiles read CloudWatch data published every minute. After you apply a fix, allow **1-2 minutes** for a probe cycle before a tile flips color.
 
 ---
@@ -215,12 +217,12 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
 
 ## Task 5: Understand and Verify the Event Fan-out
 
-When the report pipeline failed, a CloudWatch alarm (`$FANOUT_ALARM`, on report-generator **Errors**) is wired to fan that incident out to every monitoring tool SYF uses. This is the teaching centerpiece: **one event, many destinations.**
+When the report pipeline failed, a CloudWatch alarm (`$FANOUT_ALARM`, on the report workflow's **failed executions** — not Lambda Errors, which a throttle never raises) is wired to fan that incident out to every monitoring tool SYF uses. This is the teaching centerpiece: **one event, many destinations.**
 
 The path is:
 
 ```
-CloudWatch Alarm (report errors) ---\
+CloudWatch Alarm (report failed) ---\
                                       >--> EventBridge rule
 EventBridge heartbeat (every 2 min) -/         |
                                                v
@@ -302,10 +304,10 @@ A **Step Functions Parallel** state sends the *same input* to every branch simul
 
 - You triaged a stale-reports incident starting from the **red/green incident board**, not from raw logs.
 - You used **Step Functions execution history** to localize the failure to the `GenerateReport` task, then used **Lambda CloudWatch metrics** to prove it was a **throttle**, not an **error**.
-- You restored capacity by raising reserved concurrency and watched `reports_flowing` go green.
+- You restored capacity by removing the reserved-concurrency cap and watched `reports_flowing` go green.
 - You traced the **event fan-out** (CloudWatch Alarm -> EventBridge -> Step Functions Parallel -> SQS x N -> forwarder Lambda -> S3 sinks) and verified one event reaching two monitoring endpoints.
 
-**Before you move on:** In **ServiceNow**, record this as a **P2** incident — title, start time (tile went red), root cause (reserved concurrency = 0 throttling the report Lambda), remediation (raised reserved concurrency to 5), and recovery time (tile went green). You will assemble several of these into a full post-incident report in the Lab 5 capstone.
+**Before you move on:** In **ServiceNow**, record this as a **P2** incident — title, start time (tile went red), root cause (reserved concurrency = 0 throttling the report Lambda), remediation (removed the reserved-concurrency cap), and recovery time (tile went green). You will assemble several of these into a full post-incident report in the Lab 5 capstone.
 
 ## Next Steps
 

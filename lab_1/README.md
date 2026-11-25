@@ -7,7 +7,7 @@
 | **Duration** | 45 minutes |
 | **Difficulty** | Intermediate |
 | **Severity** | **P2** (degraded service — reports stalled, no data loss) |
-| **Prerequisites** | Lab 0 complete: the stack is deployed, `deploy_app.sh` has run, and your incident board was green except the two known rogue tiles. AWS CLI v2, `kubectl`, `jq`. |
+| **Prerequisites** | Lab 0 complete (by you or by your instructor): the stack is deployed, `deploy_app.sh` has run, and your incident board was green except the two known rogue tiles. AWS CLI v2, `kubectl`, `jq`. |
 | **Builds On** | Lab 0 (the connected application and the incident board) |
 
 ---
@@ -25,6 +25,61 @@ Both halves are driven by tiles on your board. The access-denial fix turns **`or
 
 ---
 
+## Start Here: Connect to Your Lab Host
+
+Your instructor has already built your stack (Lab 0) and given you a student id, a region, and an EC2 **lab host** with every tool installed. Do this once. Run **everything** in this course from the lab host, because your cluster only accepts `kubectl` from the machine that last ran `terraform apply`.
+
+> **Built Lab 0 yourself?** If you did it on this same machine, skip to the Scenario.
+
+1. **Connect.** In the AWS console, open **Systems Manager → Session Manager → Start session**, in the region your instructor gives you for the hosts. Select **`io108-<your-id>-lab-host`** and choose **Start session**.
+
+2. **Switch** to the user that owns the lab files. Do this every time you connect:
+
+    ```bash
+    sudo su - ec2-user
+    ```
+
+3. **Set** your student id and region, and save them so they survive a reconnect:
+
+    ```bash
+    export SID=sNN                # <- your assigned student id, e.g. s01
+    export REGION=us-east-1       # <- your assigned region
+    echo "export SID=$SID REGION=$REGION" >> ~/.bashrc
+    ```
+
+4. **Connect** Terraform to your stack's remote state:
+
+    ```bash
+    cd ~/io-108/lab_environment/lab_env_student
+    cp terraform.tfvars.example terraform.tfvars
+    sed -i "s/^student_id.*/student_id = \"$SID\"/; s/^region.*/region = \"$REGION\"/" terraform.tfvars
+    STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \
+      --name /io108/tfstate-bucket --query Parameter.Value --output text)
+    terraform init -backend-config="bucket=$STATE_BUCKET" \
+      -backend-config="key=io108/$SID/terraform.tfstate"
+    ```
+
+5. **Apply** the healthy baseline. This gives your lab host access to the cluster and takes a minute or two:
+
+    ```bash
+    terraform apply -var scenario=healthy
+    ```
+
+    Expect a small plan of about **2 to add, 2 to destroy** (the `aws_eks_access_*` resources). Type **yes**. **If it wants to create 100+ resources, answer no and tell your instructor:** your id, region or state key is wrong.
+
+6. **Set up** `kubectl` and **verify** the baseline:
+
+    ```bash
+    aws eks update-kubeconfig --name "$(terraform output -raw cluster_name)" --region $REGION
+    ./verify.sh
+    ```
+
+> **Expected Result:** `ALL CHECKS PASSED`. In **CloudWatch → Dashboards → `io108-<your-id>-incident-board`** (your assigned region), every tile is green **except** `Rogue contained` and `Aurora: no rogue sessions`. Those two are red on purpose. Skim **Lab 0, Task 6** for what each tile means.
+
+> **Reconnecting later?** Sessions time out when idle. Start a new session, run `sudo su - ec2-user`, then `cd ~/io-108/lab_environment/lab_env_student`, and re-run the variable block near the top of the lab you are on. You do not need to repeat steps 3–6.
+
+---
+
 ## Scenario
 
 It is mid-morning. A monitoring alert fires and your **`orders-api DB access (IRSA)`** tile on the incident board has gone **red**. The order-processing API is returning errors and the scheduled reports have stopped landing in S3. No deployment went out; nothing changed in the application code.
@@ -34,18 +89,13 @@ You open a **P2** incident in **ServiceNow** — the service is degraded but the
 **To inject this incident** (instructor-led, or self-serve), re-apply your stack in the `lab1` scenario:
 
 ```bash
-cd lab_environment/lab_env_student
-cp terraform.tfvars.example terraform.tfvars
-nano or vi terraform.tfvars
-set your region and sXX (current student ID)
-
-terraform init
-Enter our state folder path: io108/sXX/terraform.tfstate
-
+cd ~/io-108/lab_environment/lab_env_student
 terraform plan  -var scenario=lab1     # student_id + region come from your terraform.tfvars (Lab 0)
 terraform apply -var scenario=lab1
 ```
 <!-- source: course_outline_v3.md §"Lab 1: IAM Access Denial Investigation" -->
+
+> **New machine or fresh clone?** Do **Start Here** (steps 3–6) first. If your clone is not at `~/io-108`, adjust the `cd` path.
 
 This swaps the `orders-api` IRSA role's policy for one that is **missing** the Aurora-secret read and the S3 object permissions. Within a minute the board tile goes red.
 
@@ -65,7 +115,7 @@ By the end of this lab, you will:
 
 ## Task 1: Triage from the Board
 
-1. **Open** your incident board (**CloudWatch → Dashboards → `io108-$SID-incident-board`**) and confirm the **`orders-api DB access (IRSA)`** tile under the Lab 1 band is **red**. The `Reports flowing` tile (Lab 3 band) may also dip, because the reporting path depends on the same data.
+1. **Open** your incident board (**CloudWatch → Dashboards → `io108-$SID-incident-board`**) and confirm the **`orders-api DB access (IRSA)`** tile under the Lab 1 band is **red**. The `Reports flowing` tile (Lab 3 band) stays green: the report Lambda uses its own role, which this incident does not touch.
 
 2. **Re-establish** your shell variables if you opened a new terminal:
 
@@ -92,13 +142,13 @@ By the end of this lab, you will:
     ```
     <!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
 
-    The `orders-api` pods are likely `Running` but failing their readiness probe (the app starts, but `/health` returns an error because it cannot reach the database). They may show `READY 0/1`.
+    The `orders-api` pods are likely `Running` but failing their readiness probe (the app starts, but `/health` returns an error because it cannot reach the database). They may show `READY 0/1`, or restart / `CrashLoopBackOff` once the liveness probe gives up (allow 1–2 minutes).
 
 4. **Tail** the logs of an `orders-api` pod:
 
     ```bash
     POD=$(kubectl -n orders get pods -l app=orders-api -o jsonpath='{.items[0].metadata.name}')
-    kubectl -n orders logs "$POD" --tail=40
+    kubectl -n orders logs "$POD" --tail=40      # container restarted? add --previous
     ```
 <!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
 
@@ -198,7 +248,7 @@ By the end of this lab, you will:
     ```
 <!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
 
-> **Expected Result:** Pods reach `READY 1/1`. Within a minute the **`orders-api DB access (IRSA)`** tile on the board turns **green**, and `Reports flowing` recovers on the next schedule period. The P2 incident's first half is resolved — record the root cause (missing `secretsmanager:GetSecretValue` on the IRSA role) in ServiceNow.
+> **Expected Result:** Pods reach `READY 1/1`. Within a minute the **`orders-api DB access (IRSA)`** tile on the board turns **green**. The P2 incident's first half is resolved — record the root cause (missing `secretsmanager:GetSecretValue` on the IRSA role) in ServiceNow.
 
 ---
 
@@ -223,12 +273,14 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     `Username` field as generic `botocore-session-...` assumed-role sessions — so you cannot
     tell them apart from that column. The real attribution lives one level deeper, in each
     event's `userIdentity.sessionContext.sessionIssuer.userName` (the ROLE behind the
-    session). Pull the full events and tally the calling roles:
+    session). Pull the events for YOUR secret (the account is shared, so filtering
+    on the event name alone returns every student's) and tally the calling roles. CloudTrail can
+    lag up to 15 minutes:
 
     ```bash
     aws cloudtrail lookup-events \
       --region $REGION \
-      --lookup-attributes AttributeKey=EventName,AttributeValue=GetSecretValue \
+      --lookup-attributes AttributeKey=ResourceName,AttributeValue="$SECRET_ARN" \
       --max-items 400 \
       --query 'Events[].CloudTrailEvent' --output json \
     | jq -r '.[] | fromjson | .userIdentity.sessionContext.sessionIssuer.userName' \
@@ -257,7 +309,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     ```bash
     aws configservice select-resource-config \
       --region $REGION \
-      --expression "SELECT resourceId, resourceType, tags WHERE tags.key = 'Rogue'"
+      --expression "SELECT resourceId, resourceType, tags WHERE tags.tag = 'Rogue=true' AND tags.tag = 'Student=$SID'"
     ```
     <!-- source: facts_extracted_v2.md §"AWS Config for Change Correlation" -->
 
@@ -268,7 +320,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     ```bash
     aws ec2 describe-instances \
       --region $REGION \
-      --filters "Name=tag:Rogue,Values=true" \
+      --filters "Name=tag:Rogue,Values=true" "Name=tag:Student,Values=$SID" "Name=instance-state-name,Values=running" \
       --query 'Reservations[].Instances[].{Id:InstanceId,State:State.Name,Ip:PrivateIpAddress}' \
       --output table
     ```
@@ -292,7 +344,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
 
 16. **Confirm** on the board.
 
-> **Expected Result:** Within a minute the **`Rogue contained`** tile turns **green**. Note that **`Aurora: no rogue sessions`** (the Lab 4 band) may also clear once the rogue's existing Postgres sessions age out — but the *definitive* database-side lockout, using `pg_stat_activity` and the Aurora ingress rules, is the subject of **Lab 4**. For now, the instance is contained and the P2 incident is fully resolved. Close it in ServiceNow with the timeline: access-denial root cause, restoration, and rogue containment.
+> **Expected Result:** Within a minute the **`Rogue contained`** tile turns **green**. Note that **`Aurora: no rogue sessions`** (the Lab 4 band) may also clear once the rogue's existing Postgres session ages out (allow up to 8 minutes) — but the *definitive* database-side lockout, using `pg_stat_activity` and the Aurora ingress rules, is the subject of **Lab 4**. For now, the instance is contained and the P2 incident is fully resolved. Close it in ServiceNow with the timeline: access-denial root cause, restoration, and rogue containment.
 
 ---
 
@@ -308,7 +360,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
 
 **Question 3:** During the hunt you used CloudTrail and AWS Config for different questions. What does each answer, and why do you need both?
 
-**Answer:** **CloudTrail** is the audit log of API activity — it answers **who** did **what action**, **when**, and **from where** (e.g., the rogue-actor principal reading the Aurora secret every minute). **AWS Config** records the configuration and relationships of resources over time — it answers **what exists / what was created** and lets you enumerate resources by attribute (e.g., everything tagged `Rogue=true`). You need both because attribution (CloudTrail) and footprint enumeration (Config) are different halves of the same investigation: one finds the actor, the other finds the assets.
+**Answer:** **CloudTrail** is the audit log of API activity — it answers **who** did **what action**, **when**, and **from where** (e.g., the rogue-actor principal reading the Aurora secret every few minutes). **AWS Config** records the configuration and relationships of resources over time — it answers **what exists / what was created** and lets you enumerate resources by attribute (e.g., everything tagged `Rogue=true`). You need both because attribution (CloudTrail) and footprint enumeration (Config) are different halves of the same investigation: one finds the actor, the other finds the assets.
 
 ---
 
