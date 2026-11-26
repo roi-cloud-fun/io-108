@@ -56,13 +56,56 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
 
     You should see your own id and region, for example `SID=user01 REGION=us-east-1`. If either value is blank or still reads `userNN`, re-run the `export` lines above with the correct values. Do not continue until the output is right.
 
-    **Save** them to `~/.bashrc` only after they check out:
+    **Save** them to `~/.bashrc` only after they check out. The second line also stops the AWS CLI from opening long output in a pager:
 
     ```bash
     echo "export SID=$SID REGION=$REGION" >> ~/.bashrc
+    echo 'export AWS_PAGER=""' >> ~/.bashrc && export AWS_PAGER=""
     ```
 
-4. **Point** Terraform at your stack. Your instructor already built your stack; Terraform keeps its record of what it built (the *state*) in a shared S3 bucket. These commands write your id and region into `terraform.tfvars`, then connect Terraform to your state file:
+4. **Check** your stack before you touch it. **Do not run Terraform yet.** Terraform builds whatever its state file says is missing, so if your id or region is wrong it will build a second copy of the whole stack (100+ resources, about 20 minutes). These read-only commands change nothing; they confirm your stack exists under the id and region you just set:
+
+    ```bash
+    STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \
+      --name /io108/tfstate-bucket --query Parameter.Value --output text)
+    echo "State bucket: $STATE_BUCKET"
+    aws s3 ls "s3://$STATE_BUCKET/io108/$SID/terraform.tfstate"
+    aws eks describe-cluster --name io108-$SID-eks --region $REGION \
+      --query cluster.status --output text
+    aws rds describe-db-clusters --db-cluster-identifier io108-$SID-aurora --region $REGION \
+      --query 'DBClusters[0].Status' --output text
+    aws iam get-role-policy --role-name io108-$SID-orders-api-role \
+      --policy-name io108-$SID-orders-api-inline --query PolicyName --output text
+    aws ec2 describe-instances --region $REGION \
+      --filters "Name=tag:Rogue,Values=true" "Name=tag:Student,Values=$SID" \
+      --query 'Reservations[].Instances[].[InstanceId,State.Name]' --output text
+    ```
+
+    > **Expected Result:** Six lines of output, in this order:
+    >
+    > | Check | What you should see |
+    > |---|---|
+    > | State bucket | `State bucket: io108-tfstate-...` |
+    > | Your state file | one line: a date, a size, and `terraform.tfstate` |
+    > | Your EKS cluster | `ACTIVE` |
+    > | Your Aurora cluster | `available` |
+    > | The policy Lab 1 breaks | `io108-<your-id>-orders-api-inline` |
+    > | Your rogue instance | `i-...   running` |
+    >
+    > **If the state-file line is empty, or any command prints an error such as `ResourceNotFoundException`, `DBClusterNotFoundFault` or `NoSuchEntity`: stop.** Do not run Terraform. Re-check `SID` and `REGION` (step 3); if they are right, tell your instructor your stack is missing.
+
+    **What Lab 1 changes in this stack.** Everything else stays exactly as your instructor built it:
+
+    | Resource | Who changes it | When |
+    |---|---|---|
+    | EKS access entry (who may use `kubectl`) | Terraform | Step 6: moves cluster access to your lab host |
+    | `io108-<your-id>-orders-api-inline` (the orders API's IAM policy) | Terraform `scenario=lab1` breaks it; **you** repair it | Scenario, then Tasks 3–4 |
+    | `orders-api` pods | **You** restart them | Task 4 |
+    | `io108-<your-id>-rogue` EC2 instance | **You** stop it | Task 7 |
+
+    Optional: look at them in the console now (all in your region): **EKS → Clusters**, **RDS → Databases**, **IAM → Roles** (search `orders-api`), and **EC2 → Instances** (search `rogue`).
+
+5. **Point** Terraform at your stack. Terraform keeps its record of what it built (the *state*) in the S3 file you just checked. These commands write your id and region into `terraform.tfvars`, then connect Terraform to that state file:
 
     ```bash
     cd ~/io-108/lab_environment/lab_env_student
@@ -75,22 +118,19 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
 
     ```
     student_id = "user01"
-    region     = "us-east-1"
+    region = "us-east-1"
     ```
 
     If either line is wrong, go back to step 3. Then initialize Terraform (this downloads its plugins, about 30 seconds):
 
     ```bash
-    STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \
-      --name /io108/tfstate-bucket --query Parameter.Value --output text)
-    echo "$STATE_BUCKET"
     terraform init -backend-config="bucket=$STATE_BUCKET" \
       -backend-config="key=io108/$SID/terraform.tfstate"
     ```
 
-    > **Expected Result:** `echo` prints a bucket name starting with `io108-tfstate-`, and `terraform init` ends with a green **`Terraform has been successfully initialized!`**. If `echo` prints nothing, stop and tell your instructor.
+    > **Expected Result:** `terraform init` ends with a green **`Terraform has been successfully initialized!`**. If it complains that the bucket is empty or missing (for example after a reconnect), re-run the first two lines of step 4, then this command.
 
-5. **Apply** the healthy baseline. This grants your lab host access to your EKS cluster. Run:
+6. **Apply** the healthy baseline. This grants your lab host access to your EKS cluster; nothing else changes. Run:
 
     ```bash
     terraform apply -var scenario=healthy
@@ -108,14 +148,14 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
       Enter a value:
     ```
 
-    **Check the `Plan:` line first.** It should be about **2 to add, 2 to destroy** (the two `aws_eks_access_*` resources that grant cluster access):
+    **Check the `Plan:` line first.** It must read **2 to add, 0 to change, 2 to destroy** (the two `aws_eks_access_*` resources that move cluster access to your lab host):
 
     - **If it matches,** type **`yes`** and press **Enter**. Terraform will not continue until you do, and anything other than `yes` cancels.
-    - **If it wants to add 100 or more resources,** type **`no`** and press **Enter**, then tell your instructor. Your id, region or state key is wrong, and `yes` would try to build a second copy of the whole stack.
+    - **If it shows any other numbers,** type **`no`** and press **Enter**, then tell your instructor. In particular, **dozens or 100+ "to add" means Terraform cannot see your stack**, and `yes` would build a second copy of it.
 
     > **Expected Result:** After about a minute, Terraform prints **`Apply complete! Resources: 2 added, 0 changed, 2 destroyed.`** followed by a list of outputs. You are returned to the `$` prompt.
 
-6. **Connect** `kubectl` to your cluster, then **verify** the baseline:
+7. **Connect** `kubectl` to your cluster, then **verify** the baseline:
 
     ```bash
     aws eks update-kubeconfig --name "$(terraform output -raw cluster_name)" --region $REGION
@@ -126,9 +166,9 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
 
 > **Expected Result:** Seven `PASS:` lines (EKS nodes, orders pods, orders-api `/health`, Aurora, report workflow, report in S3, dashboard), ending with **`ALL CHECKS PASSED -- your stack is healthy.`** Then open the **CloudWatch console** in your assigned region, choose **Dashboards**, and open **`io108-<your-id>-incident-board`**. Every tile is green **except** `Rogue contained` and `Aurora: no rogue sessions`. Those two are red on purpose. Skim **Lab 0, Task 6** for what each tile means.
 >
-> **Troubleshooting:** If `verify.sh` shows `FAIL:` for the report workflow or the report in S3, wait 5 minutes and run `./verify.sh` again; reports are produced every 5 minutes. If the EKS nodes, pods or `/health` checks fail with `Unauthorized` or `the server has asked for the client to provide credentials`, step 5 did not finish. Re-run step 5 and make sure you typed `yes`.
+> **Troubleshooting:** If `verify.sh` shows `FAIL:` for the report workflow or the report in S3, wait 5 minutes and run `./verify.sh` again; reports are produced every 5 minutes. If the EKS nodes, pods or `/health` checks fail with `Unauthorized` or `the server has asked for the client to provide credentials`, step 6 did not finish. Re-run step 6 and make sure you typed `yes`.
 
-> **Reconnecting later?** Sessions time out when idle. Start a new session, run `sudo su - ec2-user`, then `cd ~/io-108/lab_environment/lab_env_student`, and re-run the variable block near the top of the lab you are on. You do not need to repeat steps 3–6.
+> **Reconnecting later?** Sessions time out when idle, and a new session forgets every shell variable except `SID` and `REGION` (saved in step 3). Start a new session, run `sudo su - ec2-user`, then re-run the **"Re-establish your variables"** step of the lab you are on (in this lab, **Task 1, step 2**). It changes to the right directory and restores everything that lab uses. Do not repeat steps 3–7.
 
 ---
 
@@ -147,7 +187,7 @@ terraform apply -var scenario=lab1
 ```
 <!-- source: course_outline_v3.md §"Lab 1: IAM Access Denial Investigation" -->
 
-> **New machine or fresh clone?** Do **Start Here** (steps 3–6) first. If your clone is not at `~/io-108`, adjust the `cd` path.
+> **New machine or fresh clone?** Do **Start Here** (steps 3–7) first. If your clone is not at `~/io-108`, adjust the `cd` path.
 
 This swaps the `orders-api` IRSA role's policy for one that is **missing** the Aurora-secret read and the S3 object permissions. Within a minute the board tile goes red.
 
@@ -167,21 +207,28 @@ By the end of this lab, you will:
 
 ## Task 1: Triage from the Board
 
-1. **Open** your incident board (**CloudWatch → Dashboards → `io108-$SID-incident-board`**) and confirm the **`orders-api DB access (IRSA)`** tile under the Lab 1 band is **red**. The `Reports flowing` tile (Lab 3 band) stays green: the report Lambda uses its own role, which this incident does not touch.
+1. **Open** your incident board. In the AWS console search bar, type **CloudWatch** and open it. Check that the region selector at the top right matches your `REGION`. In the left menu choose **Dashboards**, then open **`io108-<your-id>-incident-board`** (for example `io108-user01-incident-board`; *not* the similarly named `...-incident-dashboard`). Confirm the **`orders-api DB access (IRSA)`** tile under the Lab 1 band is **red**. Tiles refresh about once a minute; click the refresh icon (circular arrow) at the top right to update them. The `Reports flowing` tile (Lab 3 band) stays green: the report Lambda uses its own role, which this incident does not touch.
 
-2. **Re-establish** your shell variables if you opened a new terminal:
+2. **Re-establish** your shell variables. Run this now, and again after any reconnect. `SID` and `REGION` already come from `~/.bashrc` (Start Here step 3), so do **not** re-export them:
 
     ```bash
-    export SID=userNN
-    export REGION=us-east-1       # <- CHANGE to YOUR assigned region (e.g. us-east-2, eu-west-1)
+    cd ~/io-108/lab_environment/lab_env_student
+    echo "SID=$SID REGION=$REGION"
     export IRSA_ROLE=$(terraform output -raw irsa_role_arn)
     export SECRET_ARN=$(terraform output -raw aurora_master_secret_arn)
     export REPORTS_BUCKET=$(terraform output -raw reports_bucket)
+    export ROGUE_ROLE=$(terraform output -raw rogue_actor_role_arn)
+    export ROGUE_ID=$(terraform output -raw rogue_instance_id)
+    export ROGUE_IP=$(terraform output -raw rogue_private_ip)
+    export ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+    echo "role=$IRSA_ROLE bucket=$REPORTS_BUCKET rogue=$ROGUE_ID"
     aws eks update-kubeconfig --name "$(terraform output -raw cluster_name)" --region $REGION
     ```
 <!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
 
-> **Expected Result:** The `orders-api DB access (IRSA)` tile is red. You have a confirmed, scoped incident (P2) logged in ServiceNow.
+    **Verify** the two `echo` lines. The first must show your own id and region (not blank, not `userNN`). If it is blank, run `source ~/.bashrc` and re-run the block; if it is still wrong, redo Start Here step 3. The second must show an `arn:aws:iam::...:role/io108-<your-id>-orders-api-role`, a bucket name, and an `i-...` instance id. If any value is blank, or you see `No outputs found`, Terraform is not connected to your stack: redo Start Here steps 4–5.
+
+> **Expected Result:** The `orders-api DB access (IRSA)` tile is red, and both `echo` lines show real values. You have a confirmed, scoped incident (P2). Record it in your incident notes (in production you would open it in ServiceNow).
 
 ---
 
@@ -194,7 +241,17 @@ By the end of this lab, you will:
     ```
     <!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
 
-    The `orders-api` pods are likely `Running` but failing their readiness probe (the app starts, but `/health` returns an error because it cannot reach the database). They may show `READY 0/1`, or restart / `CrashLoopBackOff` once the liveness probe gives up (allow 1–2 minutes).
+    You will see output like this (names and ages differ):
+
+    ```
+    NAME                             READY   STATUS      RESTARTS   AGE
+    orders-api-6d9f7c8b5-abcde       0/1     Running     1          3m
+    orders-api-6d9f7c8b5-fghij       0/1     Running     1          3m
+    orders-conncheck-xxxxx           0/1     Completed   0          40m
+    orders-worker-5c7d9b6f4-klmno    1/1     Running     0          40m
+    ```
+
+    Only the `orders-api` rows matter. They are `Running` but failing their readiness probe (the app starts, but `/health` returns an error because it cannot reach the database), so `READY` shows `0/1`. After 1–2 minutes they may also restart or show `CrashLoopBackOff`. `Completed` conncheck pods are normal and can be ignored.
 
 4. **Tail** the logs of an `orders-api` pod:
 
@@ -204,7 +261,7 @@ By the end of this lab, you will:
     ```
 <!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
 
-5. **Find** the error. The application tries to read the Aurora master credentials from Secrets Manager at startup and on each `/health` check. You should see an `AccessDenied` of the form:
+5. **Find** the error. The application tries to read the Aurora master credentials from Secrets Manager at startup and on each `/health` check. In a running pod it appears as one long line starting `ERROR health check failed:`; after a restart you may instead see a Python traceback ending in `botocore.exceptions.ClientError:`. Both are the same error. If you see only `pip` install output, re-run the `logs` command with `--previous` added. The error reads (wrapped here for width):
 
     ```
     botocore.exceptions.ClientError: An error occurred (AccessDeniedException)

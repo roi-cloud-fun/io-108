@@ -10,9 +10,10 @@ locals {
     Student     = var.student_id
     Environment = "training"
     ManagedBy   = "terraform"
-    # Active scenario stamped on every resource (default_tags) so an instructor
-    # can see at a glance which fault set a student's stack is carrying.
-    Scenario = var.scenario
+    # No Scenario tag here on purpose: a default tag that changes per lab made
+    # every fault-injection plan show ~80 in-place tag updates, hiding the one
+    # real change from students. The active scenario is on the incident board
+    # header and in `terraform output scenario`.
   }
 
   # ---------------------------------------------------------------------------
