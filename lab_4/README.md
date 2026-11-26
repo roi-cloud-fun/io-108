@@ -101,6 +101,8 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
     ./deploy_app.sh
     ```
 
+    > **This can look stuck - that is normal.** The script waits up to 5 minutes for the pods to roll out and may print `Waiting for deployment "orders-api" rollout to finish...` for a while. Do not press **Ctrl+C**.
+
     > **Expected Result:** The script prints `db host:` followed by an endpoint containing **`.cluster-ro-`** (the reader), and ends with `Deploy complete. Next steps:`. A `WARNING: orders-api is not Ready` line is acceptable under a fault scenario.
 <!-- source: course_outline_v3.md §"Lab 4" -->
 
@@ -130,14 +132,16 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
     > **Expected Result:**
     >
     > - The writer endpoint contains **`.cluster-`** and the reader contains **`.cluster-ro-`**.
-    > - `App is currently using` matches the **reader**. That is the injected fault.
+    > - `App is currently using` matches the **reader**. That is the injected fault; do not "fix" it yet.
     > - The rogue line shows an `i-...` id and a `10.x.x.x` address.
     > - The secret ARN starts with `arn:aws:secretsmanager:`.
     > - `DB password length` is greater than **0** (the password itself is never printed).
     >
     > If any value is blank or the length is `0`, run step 1 again, then this block.
 
-6. **Start** a `psql` client pod in the cluster. Later steps run database queries through it:
+6. **Start** a `psql` client pod in the cluster. Later steps run database queries through it.
+
+    > **Where this runs.** Aurora only accepts connections from inside the VPC's app network, so the lab host cannot run `psql` against it directly. Every later `kubectl -n orders exec psql-client -- psql ...` command runs `psql` **inside this pod** for you and prints the result on your lab host. You never leave the lab host shell.
 
     ```bash
     kubectl -n orders run psql-client --restart=Never \
@@ -165,7 +169,10 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
     >
     > Green-reachable with red-writable means the network and credentials are fine; the *target* is wrong. Record the incident start time in your incident notes.
 
-8. **Check** the orders-api logs for the read-only error:
+8. **Check** the orders-api logs for the read-only error.
+
+    > **The app is supposed to be failing here.** Errors in this log are the symptom you are investigating, not a problem with your setup.
+
 
     ```bash
     kubectl -n orders logs deploy/orders-api --tail=30 | grep -i "read-only" || \
@@ -219,6 +226,8 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
 ## Task 4: Repoint the App to the Writer Endpoint and Confirm Green
 
 The app's DB target comes from Terraform (`deploy_app.sh` reads `app_db_host`), and the `aurora_writable` probe checks that same target. So the fix is to apply the healthy scenario and redeploy.
+
+> **Why this matters.** Repointing the app fixes only the first problem. The healthy apply does **not** stop the rogue, and it keeps the rogue's database rule in place; you lock the rogue out yourself in Task 6.
 
 12. **Preview** the healthy scenario. This changes nothing. Make sure you are in the Terraform directory:
 
@@ -360,6 +369,8 @@ The rogue instance (stopped in Lab 1, restarted by the `lab4` apply) holds a Pos
 
 ## Task 6: Lock Out the Rogue and Confirm Green
 
+> **Do not run `terraform apply` again after this point.** Any apply with `healthy`, `lab1`, `lab4` or `lab5` starts the rogue again and recreates the security-group rule you are about to remove, undoing this task.
+
 21. **Revoke** the rogue's path to Aurora. It connects through a dedicated ingress rule on Aurora's security group (SG). First look up the two SG ids:
 
     ```bash
@@ -371,7 +382,11 @@ The rogue instance (stopped in Lab 1, restarted by the `lab4` apply) holds a Pos
     echo "ROGUE_SG=$ROGUE_SG AURORA_SG=$AURORA_SG"
     ```
 
-    Both values must start with `sg-`. If either is `None` or blank, re-run steps 1 and 5, then this block. Then remove the rule:
+    Both values must start with `sg-`. If either is `None` or blank, re-run steps 1 and 5, then this block.
+
+    > **The next command changes your stack.** It deletes one inbound rule from Aurora's security group: the rule that lets the rogue's security group reach port 5432. The app pods and the health checker use their own rules and are not affected.
+
+    Remove the rule:
 
     ```bash
     aws ec2 revoke-security-group-ingress --group-id "$AURORA_SG" --region "$REGION" \
@@ -390,7 +405,9 @@ The rogue instance (stopped in Lab 1, restarted by the `lab4` apply) holds a Pos
 
     > **Expected Result:** JSON showing `"CurrentState"` with `"Name": "stopping"` (or `"stopped"` if it was already stopped).
 
-23. **Re-run** the filtered `pg_stat_activity` query from step 18 (the one with `WHERE client_addr = '$ROGUE_IP'`). An open session can linger for several minutes, so repeat every couple of minutes.
+23. **Re-run** the filtered `pg_stat_activity` query from step 18 (the one with `WHERE client_addr = '$ROGUE_IP'`).
+
+    > **A session can outlive the fix.** Removing a security-group rule blocks *new* connections; a connection that is already open can stay listed until it ends or the stopped instance's TCP session times out (up to about 8 minutes). Still one row? That is expected: repeat the query every couple of minutes.
 
     > **Expected Result:** `(0 rows)`.
 
@@ -398,7 +415,6 @@ The rogue instance (stopped in Lab 1, restarted by the `lab4` apply) holds a Pos
 
     > **Expected Result:** **`Aurora: no rogue sessions`** (`aurora_no_rogue`) is **green**, and the Lab 1 `rogue_contained` tile is green (within 1–3 minutes of step 22). Record the second root cause in your incident notes: rogue sessions from `$ROGUE_IP`, contained by revoking the SG rule and stopping the instance.
 
-> **Note:** Do **not** run `terraform apply` again in this lab. Applying any scenario except `lab2` or `lab3` restarts the rogue and recreates the ingress rule you just revoked.
 
 ---
 
