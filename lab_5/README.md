@@ -60,42 +60,84 @@ By the end of this lab, you will be able to:
 
 ## Pre-Lab Setup
 
-Run from a local clone or AWS CloudShell.
+Run **everything** in this lab on your **lab host**, as `ec2-user`. Connect with Session Manager (Lab 1, *Start Here*, step 1), then run `sudo su - ec2-user`.
 
-1. **Materialize the capstone incident** (replace `user01` with your assigned id):
+1. **Inject the capstone incident.** Go to the Terraform directory and apply the `lab5` scenario (your id and region come from `terraform.tfvars`, set in Lab 1):
 
     ```bash
-    cd lab_environment/lab_env_student
-    terraform plan  -var scenario=lab5                       # student_id + region from terraform.tfvars (Lab 0)
-    terraform apply -var scenario=lab5 -auto-approve
-    ./deploy_app.sh          # may finish quickly, or wait ~5 min and warn orders-api is not Ready: both fine
+    cd ~/io-108/lab_environment/lab_env_student
+    terraform apply -var scenario=lab5
     ```
+
+    Terraform takes about a minute to compare your stack with the code, then prints a **plan** and stops at a confirmation prompt:
+
+    ```
+    Plan: 1 to add, 2 to change, 0 to destroy.
+
+    Do you want to perform these actions?
+      Terraform will perform the actions described above.
+      Only 'yes' will be accepted to approve.
+
+      Enter a value:
+    ```
+
+    **Check the `Plan:` line first.** Expect a small plan: about **2–4 to change, 0–2 to add, 0 to destroy**. It lists `aws_route.capstone_misroute[0]` (add: the partner misroute), `aws_iam_role_policy.orders_api` (change: the IAM break) and `aws_cloudwatch_dashboard.incident_board` (change). Coming from Lab 4, it may also list `aws_ec2_instance_state.rogue[0]` (restarts the rogue you stopped) or the `aurora_from_rogue` security-group rule you revoked.
+
+    - **If it matches,** type **`yes`** and press **Enter**. Terraform will not continue until you do, and anything other than `yes` cancels.
+    - **If it wants to add dozens or 100+ resources, or destroy anything unexpected,** type **`no`**, press **Enter**, and tell your instructor.
+
+    > **Expected Result:** After about a minute, Terraform prints **`Apply complete! Resources: 1 added, 2 changed, 0 destroyed.`** (your numbers match your plan), followed by a list of outputs. If it ends with `Error:` instead, run the same `terraform apply` command again and type `yes`. A failed apply can stop before the misroute is created.
+
+    Then redeploy the app, which applies the pod-network fault:
+
+    ```bash
+    ./deploy_app.sh
+    ```
+
+    > **Expected Result:** It prints `netpol default-deny: true` near the top and ends with `Deploy complete. Next steps:`. It may finish within a minute, or wait about 5 minutes and print `WARNING: orders-api is not Ready`. Both are fine: the app is meant to be broken.
 <!-- source: course_outline_v3.md §"Lab 5" -->
 
-2. **Capture outputs:**
+2. **Set** this lab's variables. Re-run this whole block any time you reconnect (after `sudo su - ec2-user`):
 
     ```bash
-    export REGION=$(terraform output -raw region)
-    export STUDENT_ID=$(terraform output -raw student_id)
-    export DASHBOARD=$(terraform output -raw incident_board_dashboard_name)
-    export VPC_ID=$(terraform output -raw vpc_id 2>/dev/null || aws ec2 describe-vpcs --region "$REGION" --filters "Name=tag:Student,Values=$STUDENT_ID" --query 'Vpcs[0].VpcId' --output text)
-    export IRSA_ROLE="io108-${STUDENT_ID}-orders-api-role"
+    cd ~/io-108/lab_environment/lab_env_student
+    echo "SID=$SID REGION=$REGION"
+    STUDENT_ID=$SID
+    export VPC_ID=$(aws ec2 describe-vpcs --region "$REGION" --filters "Name=tag:Name,Values=io108-${STUDENT_ID}-vpc" --query 'Vpcs[0].VpcId' --output text)
+    export IRSA_ROLE="io108-${STUDENT_ID}-orders-api-role"   # role NAME (Lab 1 used the ARN)
     export SECRET_ARN=$(terraform output -raw aurora_master_secret_arn)
     export REPORTS_BUCKET=$(terraform output -raw reports_bucket)
     export ROGUE_ID=$(terraform output -raw rogue_instance_id)
     export ROGUE_IP=$(terraform output -raw rogue_private_ip)
     export PARTNER_CIDR=203.0.113.0/24   # var.partner_cidr default
     export FLOW_LG="/io108/${STUDENT_ID}/vpc-flow-logs"
-    echo "VPC:          $VPC_ID"
-    echo "Partner CIDR: $PARTNER_CIDR"
-    echo "Flow logs:    $FLOW_LG"
+    echo "VPC:            $VPC_ID"
+    echo "IRSA role:      $IRSA_ROLE"
+    echo "Secret ARN:     $SECRET_ARN"
+    echo "Reports bucket: $REPORTS_BUCKET"
+    echo "Rogue:          $ROGUE_ID / $ROGUE_IP"
+    echo "Partner CIDR:   $PARTNER_CIDR"
+    echo "Flow logs:      $FLOW_LG"
     ```
+
+    > **Expected Result:** The first line shows your own id and region (for example `SID=user01 REGION=us-east-1`). If it is blank, finish Lab 1 *Start Here* step 3. Then check:
+    >
+    > - `VPC` starts with `vpc-`.
+    > - `IRSA role` reads `io108-<your-id>-orders-api-role`.
+    > - `Secret ARN` starts with `arn:aws:secretsmanager:`.
+    > - `Reports bucket` is not blank.
+    > - `Rogue` shows `i-...` and a `10.x.x.x` address.
+    > - `Flow logs` reads `/io108/<your-id>/vpc-flow-logs`.
+    >
+    > If anything is blank or `None`, make sure you are in `~/io-108/lab_environment/lab_env_student` and re-run the block.
+
+> **Reconnected?** Sessions time out when idle. Start a new session, run `sudo su - ec2-user`, re-run the step 2 block, and then re-run the first command block of the task you were on. Several tasks set short-lived variables (`ENI`, `NIP`, `NIA`, `RT_ID`, `ROGUE_SG`, `AURORA_SG`) that a reconnect loses. Do **not** re-run step 1: it re-injects every fault.
 
 ---
 
 ## Task 1: Lead with the Board — Scope and Order the Incident
 
-1. **Open** your incident board (`$DASHBOARD`). Note **every** red tile. You should see (at minimum): `app_path_reachable`, `tgw_or_network_ok`, `orders_api_db_access`, `eks_pod_internet`, `eks_pod_dns`, `aurora_no_rogue`, `rogue_contained`. The two `eks_pod_*` tiles go red last, 5–8 minutes after the deploy.
+1. **Open** your incident board: **CloudWatch console** (your region) → **Dashboards** → **`io108-<your-id>-incident-board`**. Tiles refresh about every minute. Note **every** red tile. You should see (at minimum): `app_path_reachable`, `tgw_or_network_ok`, `orders_api_db_access`, `eks_pod_internet`, `eks_pod_dns`, `aurora_no_rogue`, `rogue_contained`. The two `eks_pod_*` tiles go red last, 5–8 minutes after the deploy.
 
 2. **Decide a triage order.** A defensible order:
 
@@ -118,7 +160,16 @@ Run from a local clone or AWS CloudShell.
     ```
     <!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
 
-    Run it two or three times if you want more records. Wait ~1–2 min for Flow Log delivery, then in **Log Analytics**, select log group `$FLOW_LG` and run:
+    `kubectl run --rm` starts a throwaway pod, runs one command, and deletes the pod. It takes about 10–40 seconds (longer the first time, while the image downloads). You may see `If you don't see a command prompt, try pressing enter.`; ignore it.
+
+    > **Expected Result:** A Python error (a *traceback*) ending in `TimeoutError: timed out`, then `pod "nettest" deleted` and **`blackholed (expected)`**. The timeout **is** the expected result: the connection never completed.
+
+    Run it two or three times if you want more records. *VPC Flow Logs* are a record of every connection attempt in your VPC, delivered to CloudWatch Logs. Wait about 1–2 minutes for delivery, then query them:
+
+    - **CloudWatch console** (your region) → left menu **Logs → Logs Insights**.
+    - **Select log groups:** `/io108/<your-id>/vpc-flow-logs`.
+    - **Time range:** **Last 15 minutes**.
+    - Replace the query text with the following, then choose **Run query** (5–20 seconds):
 
     ```
     fields @timestamp, srcAddr, dstAddr, action, bytes
@@ -127,39 +178,62 @@ Run from a local clone or AWS CloudShell.
     | limit 50
     ```
 
-    You will now see outbound records (`srcAddr` is your EKS **node's** IP: the VPC CNI source-NATs pod traffic leaving the VPC) toward the partner CIDR (`dstAddr` in `203.0.113.x`) with **no corresponding return traffic** — the asymmetric, one-way signature of a routing blackhole. (A security-group or NACL block would instead show `REJECT` records; here the packets simply leave via the wrong hop and never come back.)
+    No rows? Wait another minute, re-run the `nettest` command, and run the query again.
 
-4. **Run VPC Reachability Analyzer** to name the broken hop. In the **VPC console -> Reachability Analyzer -> Create and analyze path**:
+    You will now see outbound records toward the partner CIDR (`dstAddr` in `203.0.113.x`). `srcAddr` is your EKS **node's** IP, not the pod's, because the VPC CNI (the EKS networking plugin) rewrites the source address of pod traffic leaving the VPC to the node's address (*source NAT*). The `action` column shows **`ACCEPT`**. That only means the packet was allowed to leave; it does not mean it arrived. The proof of the fault is that there is **no return traffic**: change the filter line to `| filter srcAddr like /203\.0\.113\./` and run again, and you get **0 rows**. That is the asymmetric, one-way signature of a routing blackhole. A security-group or NACL block would instead show `REJECT` records; here the packets simply leave via the wrong hop and never come back.
 
-    - **Source:** an EKS node ENI (or the private subnet) in `$VPC_ID`
-    - **Destination type:** IP address, **Destination address:** an address inside `$PARTNER_CIDR` (e.g. `203.0.113.10`)
-    - **Analyze**
+4. **Run VPC Reachability Analyzer** to name the broken hop. Reachability Analyzer reads your network *configuration* (route tables, gateways, security groups) and reports whether a path works and where it breaks. You can use the console or the CLI; both give the same answer.
 
-    If the console asks for a destination resource instead, use the CLI:
+    **Option A: console.** In the **VPC console** (your region), open the left menu **Network Analysis → Reachability Analyzer** and choose **Create and analyze path**:
+
+    - **Source type:** **Network interfaces**. **Source:** pick a network interface (*ENI*, a virtual network card) whose description or attached instance is one of your EKS nodes (`io108-<your-id>-node`).
+    - **Destination type:** **IP address**. **Destination:** `203.0.113.10` (an address inside the partner CIDR).
+    - **Protocol:** **TCP**.
+    - Choose **Create and analyze path**. The analysis takes about 1–3 minutes; the status changes from *Pending* to *Succeeded*.
+
+    If your console does not offer an IP address as the destination, use Option B.
+
+    **Option B: CLI.** First find a node's primary network interface and check it:
 
     ```bash
     ENI=$(aws ec2 describe-instances --region "$REGION" \
       --filters "Name=tag:Name,Values=io108-${STUDENT_ID}-node" "Name=instance-state-name,Values=running" \
-      --query 'Reservations[0].Instances[0].NetworkInterfaces[0].NetworkInterfaceId' --output text)
+      --query 'Reservations[0].Instances[0].NetworkInterfaces[?Attachment.DeviceIndex==`0`].NetworkInterfaceId | [0]' --output text)
+    echo "ENI=$ENI"
+    ```
+
+    It must print `ENI=eni-...`. If it prints `None`, re-run Pre-Lab step 2 and try again. Then create the path and start the analysis:
+
+    ```bash
     NIP=$(aws ec2 create-network-insights-path --region "$REGION" --source "$ENI" --protocol tcp \
       --filter-at-source DestinationAddress=203.0.113.10 \
       --query NetworkInsightsPath.NetworkInsightsPathId --output text)
     NIA=$(aws ec2 start-network-insights-analysis --region "$REGION" --network-insights-path-id "$NIP" \
       --query NetworkInsightsAnalysis.NetworkInsightsAnalysisId --output text)
+    echo "NIP=$NIP NIA=$NIA"
     sleep 60
-    aws ec2 describe-network-insights-analyses --region "$REGION" --network-insights-analysis-ids "$NIA" \
-      --query 'NetworkInsightsAnalyses[0].{Found:NetworkPathFound,Why:Explanations[].ExplanationCode,Hops:ForwardPathComponents[].RouteTableRoute}'
     ```
 
-    The result reports **Not reachable** (`IGW_PUBLIC_IP_ASSOCIATION_FOR_EGRESS`) and the path shows the route table hop - a route for `203.0.113.0/24` sending traffic to an **internet gateway** instead of the NAT gateway. Reachability Analyzer has just told you exactly which hop is misconfigured, without reading a single packet.
+    The `echo` prints `NIP=nip-... NIA=nia-...`. `sleep 60` then pauses for one minute **with no output**; wait for the `$` prompt to return. Then read the result:
+
+    ```bash
+    aws ec2 describe-network-insights-analyses --region "$REGION" --network-insights-analysis-ids "$NIA" \
+      --query 'NetworkInsightsAnalyses[0].{Status:Status,Found:NetworkPathFound,Why:Explanations[].ExplanationCode}'
+    ```
+
+    If `Status` is `running`, wait 30 seconds and run this last command again. When `Status` is `succeeded`, **`Found` is `false`**: the path is not reachable.
+
+    > **What to look for:** In the console, the analysis shows **Reachability status: Not reachable**. Open the **Explanations** section and find the route-table hop: your private route table has a route for `203.0.113.0/24` that sends traffic to an **internet gateway** (`igw-...`) instead of the NAT gateway. The CLI's `Why` list names the same problem as explanation codes. Instances in a private subnet have no public IP, so they cannot use an internet gateway directly. Reachability Analyzer has told you which hop is misconfigured, without reading a single packet.
 
 > **Flow Logs vs. Reachability Analyzer:** Flow Logs show you what *did* happen on the wire (drops, asymmetry, volume). Reachability Analyzer reasons about the *configuration* and tells you which hop *would* break a path and why — even with no live traffic. For a routing fault, Reachability Analyzer usually localizes it fastest; Flow Logs confirm the real-world symptom.
 
 ---
 
-## Task 3: (Optional add-on) Open-Source Packet-Analysis Box — Compare and Contrast
+## Task 3: (Optional — Instructor Demo) Open-Source Packet-Analysis Box — Compare and Contrast
 
-This piece is a **documented manual add-on**, not pre-built. Do it if you have time; the lesson is about *tool selection*, not about the capture itself.
+> **Optional. Skip this task unless your instructor runs it as a demo.** Nothing here is pre-built, nothing on the board depends on it, and the rest of the lab does not need it. Steps 5–8 describe *what* the demo does so you can follow along; they are not a full build guide. The lesson is about *tool selection*, not about the capture itself.
+>
+> **Cost and teardown:** the analysis box is an EC2 instance billed by the hour, and Traffic Mirroring is billed per mirrored network interface per hour. Whoever builds it must tear it down the same day: **delete the mirror session, then the mirror target and mirror filter, then terminate the analysis box.**
 
 When AWS-native tools are not enough — or when you genuinely need to see bytes on the wire — you can mirror traffic to an EC2 "analysis box" running open-source tools. Conceptually:
 
@@ -172,15 +246,17 @@ When AWS-native tools are not enough — or when you genuinely need to see bytes
     ```
 <!-- source: content/narratives/Module_2_narrative.md §"Wireshark and tcpdump for packet capture" -->
 
-7. **Configure VPC Traffic Mirroring:** create a **mirror target** (the analysis box ENI), a **mirror filter** (e.g. the partner CIDR), and a **mirror session** from the source ENI you care about. Mirrored packets now arrive on the analysis box.
-8. **Inspect the same incident on the wire:**
+7. **Configure VPC Traffic Mirroring:** create a **mirror target** (the analysis box ENI), a **mirror filter** (e.g. the partner CIDR), and a **mirror session** from the source ENI you care about. Mirrored packets now arrive on the analysis box **wrapped in VXLAN** (UDP port 4789): each original packet is carried inside a new packet addressed to the analysis box.
+8. **Inspect the same incident on the wire.** Because of the VXLAN wrapper, filter on UDP 4789 and let the tool decode the inner packet. A plain `net 203.0.113.0/24` filter would match nothing.
 
     ```bash
-    sudo tcpdump -ni any net 203.0.113.0/24        # see the one-way SYNs, no returns
-    sudo tshark -ni any -Y "ip.dst == 203.0.113.10"
-    nmap -Pn -p 443 203.0.113.10                    # confirm reachability from this box
+    sudo tcpdump -ni eth0 udp port 4789                                   # mirrored traffic; inner packets show the one-way SYNs to 203.0.113.x, no replies
+    sudo tshark -ni eth0 -d udp.port==4789,vxlan -Y "ip.dst == 203.0.113.10"   # decode VXLAN, show only the inner partner-bound packets
+    nmap -Pn -p 443 203.0.113.10                                          # active probe from the box itself
     # ntopng: open the web UI for flow-level visualization
     ```
+
+    The interface name may be `ens5` instead of `eth0`; `ip -br addr` lists it. Press **Ctrl+C** once to stop `tcpdump` or `tshark`.
 <!-- source: content/narratives/Module_2_narrative.md §"an EC2 analysis box running nmap" -->
 
 > **The lesson - pragmatic tool selection:** For this routing fault, a **Flow Logs query** or a quick **`nmap`/`traceroute` from an EC2 instance** told us what we needed in under a minute. Standing up Traffic Mirroring + an OSS capture stack is real work, and for a misroute it was *slower* than the native tools. **Sometimes**, though — intermittent corruption, an application-layer protocol bug, a "the metrics look fine but it's still broken" mystery — the deep packet view is exactly what cracks it. Know both; reach for the lighter tool first. In SYF's environment this packet/flow role is played by **SolarWinds, NewRelic, and Aviatrix**; we use OSS here so there is no licensing, and AWS-native remains primary.
@@ -189,16 +265,24 @@ When AWS-native tools are not enough — or when you genuinely need to see bytes
 
 ## Task 4: Fix the Misroute
 
-9. **Find** the private route table and the offending route. In the **VPC console -> Route tables**, select the `io108-<your-id>` **private** route table, open **Routes**, and locate the entry `203.0.113.0/24 -> igw-...`. Or from the CLI:
+9. **Find** the private route table and the offending route. A *route table* tells traffic leaving a subnet where to go next. You can view it in the **VPC console → Route tables**: select **`io108-<your-id>-private-rt`**, open the **Routes** tab, and find the entry `203.0.113.0/24 → igw-...`. Run the CLI either way, because the next step needs the `RT_ID` it sets:
 
     ```bash
     RT_ID=$(aws ec2 describe-route-tables --region "$REGION" \
-      --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:Name,Values=*private*" \
+      --filters "Name=vpc-id,Values=$VPC_ID" "Name=tag:Name,Values=io108-${STUDENT_ID}-private-rt" \
       --query 'RouteTables[0].RouteTableId' --output text)
+    echo "RT_ID=$RT_ID"
     aws ec2 describe-route-tables --route-table-ids "$RT_ID" --region "$REGION" \
-      --query 'RouteTables[0].Routes' --output table
+      --query 'RouteTables[0].Routes[].[DestinationCidrBlock,GatewayId,NatGatewayId,State]' --output table
     ```
 <!-- source: facts_extracted_v2.md §"Route Table Troubleshooting" -->
+
+    > **Expected Result:** `RT_ID=rtb-...`, then a table that includes these two rows (plus a `local` row for the VPC itself):
+    >
+    > - `0.0.0.0/0` with a `nat-...` id: the healthy default route through the NAT gateway.
+    > - **`203.0.113.0/24` with an `igw-...` id**: the misroute.
+    >
+    > If `RT_ID` is `None` or blank, re-run Pre-Lab step 2, then this block.
 
 10. **Delete** the misroute so partner traffic falls back to the route table's `0.0.0.0/0 -> NAT gateway` default:
 
@@ -208,7 +292,9 @@ When AWS-native tools are not enough — or when you genuinely need to see bytes
     ```
 <!-- source: facts_extracted_v2.md §"Missing route" -->
 
-> **Expected Result:** Within 1-2 minutes **`app_path_reachable`** and **`tgw_or_network_ok`** turn **GREEN**. (In production this is the network team correcting the Aviatrix route — same concept.)
+    This command prints **nothing** when it succeeds. Re-run the `describe-route-tables` command from step 9: the `203.0.113.0/24` row is gone. If you get `InvalidRoute.NotFound`, the route was already deleted; continue.
+
+> **Expected Result:** Within 1–2 minutes (the probes run every minute) **`app_path_reachable`** and **`tgw_or_network_ok`** turn **GREEN**. (In production this is the network team correcting the Aviatrix route — same concept.)
 
 ---
 
@@ -216,7 +302,15 @@ When AWS-native tools are not enough — or when you genuinely need to see bytes
 
 The `orders_api_db_access` tile is red because the orders-api IRSA role was stripped of its Aurora-secret read and S3 permissions — the same break you diagnosed in Lab 1 (the pod gets `AccessDenied` reading DB credentials).
 
-11. **Restore** the role's inline policy. Recreate the permissions the healthy role carries:
+11. **Restore** the role's inline policy. Recreate the permissions the healthy role carries. First check the three values the policy is built from:
+
+    ```bash
+    echo "ROLE=$IRSA_ROLE"
+    echo "SECRET=$SECRET_ARN"
+    echo "BUCKET=$REPORTS_BUCKET"
+    ```
+
+    `ROLE` must read `io108-<your-id>-orders-api-role` (a role **name**, not an `arn:...`), `SECRET` must start with `arn:aws:secretsmanager:`, and `BUCKET` must not be blank. If any is wrong, re-run Pre-Lab step 2. Then write the policy:
 
     ```bash
     aws iam put-role-policy --role-name "$IRSA_ROLE" \
@@ -237,6 +331,16 @@ The `orders_api_db_access` tile is red because the orders-api IRSA role was stri
     ```
 <!-- source: course_outline_v3.md §"IAM/IRSA policy analysis" -->
 
+    This command prints **nothing** when it succeeds. Confirm the policy was written:
+
+    ```bash
+    aws iam get-role-policy --role-name "$IRSA_ROLE" \
+      --policy-name "io108-${STUDENT_ID}-orders-api-inline" \
+      --query 'PolicyDocument.Statement[].Sid' --output text
+    ```
+
+    Expected: one line containing `ReadAuroraMasterSecret` and `ReadWriteReports`. A `MalformedPolicyDocument` or `ValidationError` error means one of the three values above was wrong.
+
 > **Expected Result:** **`orders_api_db_access`** turns **GREEN** within about 3 minutes (the probe asks IAM directly). Leave the pods alone for now: they install packages at startup, so they cannot come back until Task 6 restores egress. (Refer back to Lab 1 for the full diagnosis of how you would *find* this from `AccessDenied` if it were not already localized for you.)
 
 ---
@@ -253,17 +357,22 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
     ```
 <!-- source: content/narratives/Module_1_narrative.md §"resolve DNS and reach the internet" -->
 
-13. **Remove** the default-deny by redeploying the chart with the policy disabled (the clean, declarative fix):
+    Expected: the policy is listed as **`orders-default-deny-egress`**. `describe` shows `Policy Types: Egress` and no allowed egress rules.
+
+13. **Remove** the default-deny by redeploying the chart with the policy disabled (the clean, declarative fix). Helm is the tool that installed the app; this command must run from the Terraform directory, where the chart lives:
 
     ```bash
+    cd ~/io-108/lab_environment/lab_env_student
     helm upgrade orders charts/orders --namespace orders --reuse-values \
       --set networkPolicy.defaultDeny=false
     ```
     <!-- source: content/narratives/Module_1_narrative.md §"deployed with Helm" -->
 
-    (If you need an immediate manual fix instead, `kubectl -n orders delete networkpolicy <default-deny-name>` clears it; the declarative helm change is preferred so the next deploy does not reintroduce it.)
+    > **Expected Result:** `Release "orders" has been upgraded. Happy Helming!` Running `kubectl -n orders get networkpolicy` no longer lists `orders-default-deny-egress` (it may print `No resources found in orders namespace.`).
 
-14. **Restart** the orders-api so it starts cleanly with both fixes (IAM and egress) in place:
+    (If you need an immediate manual fix instead, `kubectl -n orders delete networkpolicy orders-default-deny-egress` clears it; the declarative helm change is preferred so the next deploy does not reintroduce it.)
+
+14. **Restart** the orders-api so it starts cleanly with both fixes (IAM and egress) in place. The pods install packages at startup, so this takes about 1–3 minutes:
 
     ```bash
     kubectl -n orders rollout restart deploy/orders-api
@@ -271,13 +380,15 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
     ```
 <!-- source: content/narratives/Module_3_narrative.md §"pods get their AWS permissions through IRSA" -->
 
-> **Expected Result:** **`eks_pod_internet`** and **`eks_pod_dns`** turn **GREEN** once the conncheck CronJob's egress is restored and it resumes publishing metrics.
+    > **Expected Result:** `deployment.apps/orders-api restarted`, then (after 1–3 minutes) `deployment "orders-api" successfully rolled out`. If it says `timed out waiting for the condition`, run the `rollout status` line again. If it times out twice, check that steps 11 and 13 succeeded.
+
+> **Expected Result:** **`eks_pod_internet`** and **`eks_pod_dns`** turn **GREEN** within about 2–3 minutes, once the conncheck CronJob (which runs every minute) can reach the network again and resumes publishing metrics.
 
 ---
 
 ## Task 7: Contain the Rogue (reuse Lab 4)
 
-15. **Revoke** the rogue's Aurora path and **stop** the instance, exactly as in Lab 4:
+15. **Revoke** the rogue's Aurora path and **stop** the instance, exactly as in Lab 4. First look up the two security-group ids and check them:
 
     ```bash
     ROGUE_SG=$(aws ec2 describe-instances --instance-ids "$ROGUE_ID" --region "$REGION" \
@@ -285,13 +396,21 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
     AURORA_SG=$(aws ec2 describe-security-groups --region "$REGION" \
       --filters "Name=group-name,Values=io108-${STUDENT_ID}-aurora-sg" \
       --query 'SecurityGroups[0].GroupId' --output text)
+    echo "ROGUE_SG=$ROGUE_SG AURORA_SG=$AURORA_SG"
+    ```
+
+    Both must start with `sg-`. If either is `None` or blank, re-run Pre-Lab step 2, then this block. Then revoke and stop:
+
+    ```bash
     aws ec2 revoke-security-group-ingress --group-id "$AURORA_SG" --region "$REGION" \
       --protocol tcp --port 5432 --source-group "$ROGUE_SG"
     aws ec2 stop-instances --instance-ids "$ROGUE_ID" --region "$REGION"
     ```
 <!-- source: content/narratives/Module_1_narrative.md §"containing the rogue" -->
 
-> **Expected Result:** **`rogue_contained`** turns **GREEN** within 1-3 minutes, **`aurora_no_rogue`** within about 8 (its open session has to expire).
+    The revoke prints JSON containing `"Return": true` (`InvalidPermission.NotFound` means the rule is already gone; continue). The stop prints JSON showing `"CurrentState"` with `"Name": "stopping"`.
+
+> **Expected Result:** **`rogue_contained`** turns **GREEN** within 1–3 minutes, **`aurora_no_rogue`** within about 8 (its open session has to expire).
 
 ---
 
@@ -299,7 +418,14 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
 
 16. **Return** to the incident board and confirm **every tile is green** across all five lab bands. That is your objective signal that the compound incident is resolved.
 
-17. **Sanity-check** end to end: reports flowing, app writing to the writer endpoint, partner path reachable, pods healthy, rogue contained.
+17. **Sanity-check** end to end: reports flowing, app writing to the writer endpoint, partner path reachable, pods healthy, rogue contained. Run the stack's health check (about 30 seconds):
+
+    ```bash
+    cd ~/io-108/lab_environment/lab_env_student
+    ./verify.sh
+    ```
+
+    > **Expected Result:** Seven `PASS:` lines, ending with **`ALL CHECKS PASSED -- your stack is healthy.`** If the report workflow or report-in-S3 check shows `FAIL:`, wait 5 minutes and run it again; reports are produced every 5 minutes. For any other `FAIL:`, go back to the task for that layer.
 
 > **What Just Happened?** You ran a real compound incident the way it should be run: board first to scope it, deliberate triage order, the right tool per layer (Reachability Analyzer and Flow Logs for the route; the per-domain tools for IAM, pods, DB, security), and a clean confirmation that every check recovered. No single "root cause" — four of them, cleared in order.
 
@@ -333,6 +459,10 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
 
 **Check:** Confirm `aws iam get-role-policy --role-name "$IRSA_ROLE" --policy-name "io108-${STUDENT_ID}-orders-api-inline"` shows the secret + S3 statements. (Pods still failing after Task 6? Re-run the step 14 restart.)
 
+### `aurora_no_rogue` or `rogue_contained` stays red
+
+**Check:** `aws ec2 describe-instances --instance-ids "$ROGUE_ID" --region "$REGION" --query 'Reservations[0].Instances[0].State.Name' --output text` should print `stopped` (or `stopping`); if it prints `running`, repeat step 15. `aurora_no_rogue` can take up to ~8 minutes after the stop while the rogue's open database session expires. Did you run `terraform apply` after step 15? That restarts the rogue and recreates its ingress rule; repeat step 15.
+
 ### Pod tiles stay red
 
 **Check:** `kubectl -n orders get networkpolicy` should no longer show a default-deny. The conncheck CronJob runs every minute; give it a cycle to republish metrics. (After the *apply*, these two tiles take 5–8 minutes to go red.)
@@ -350,11 +480,11 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
 <details>
 <summary><strong>Answers</strong></summary>
 
-**A1:** Run **Reachability Analyzer first** — it reasons about configuration and names the bad hop (the `203.0.113.0/24 -> IGW` route) directly, even with no live traffic, which is the fastest path to root cause for a routing fault. Use **Flow Logs** next to confirm the real-world symptom (outbound with no return / REJECTs). A **full packet capture** is rarely needed for a pure routing fault — it is heavyweight and slower to stand up; reserve it for intermittent corruption, protocol-level bugs, or cases where flow/config tools come back clean but the problem persists.
+**A1:** Run **Reachability Analyzer first** — it reasons about configuration and names the bad hop (the `203.0.113.0/24 -> IGW` route) directly, even with no live traffic, which is the fastest path to root cause for a routing fault. Use **Flow Logs** next to confirm the real-world symptom (outbound records with no return traffic). A **full packet capture** is rarely needed for a pure routing fault — it is heavyweight and slower to stand up; reserve it for intermittent corruption, protocol-level bugs, or cases where flow/config tools come back clean but the problem persists.
 
 **A2:** A network-path failure has the broadest blast radius and is the hardest to reason about once you are deep inside another layer, so stabilizing it first prevents it from confounding every other diagnosis. The risk of chasing the first symptom you recognize is tunnel vision: you may spend the incident on one layer while three others stay broken, and overlapping failures can mask or mimic each other, leading to wrong conclusions.
 
-**A3:** The instances have no public IPs and rely on NAT for egress; sending partner-bound packets to the internet gateway means the SYN leaves but the return path cannot make it back to a private, non-NATed source — so instead of a clean "no route" error you get connections that hang and time out (asymmetric, one-way). In Flow Logs this appears as outbound records toward the partner CIDR with no matching inbound/return records (and/or REJECTs), which is the tell for a one-way path rather than a closed port.
+**A3:** The instances have no public IPs and rely on NAT for egress; sending partner-bound packets to the internet gateway means the SYN leaves but the return path cannot make it back to a private, non-NATed source — so instead of a clean "no route" error you get connections that hang and time out (asymmetric, one-way). In Flow Logs this appears as outbound records toward the partner CIDR with no matching inbound/return records (the outbound records show `ACCEPT`, not `REJECT`), which is the tell for a one-way path rather than a closed port.
 
 </details>
 
@@ -366,6 +496,8 @@ The `eks_pod_internet` and `eks_pod_dns` tiles are red because a default-deny eg
 - You diagnosed a **network blackhole** with **Flow Logs** (asymmetry) and **Reachability Analyzer** (the misconfigured hop), and saw where an **OSS packet-analysis box** fits — and where it is overkill.
 - You cleared every layer: deleted the **misroute**, restored the **IRSA** path, removed the default-deny **NetworkPolicy**, and **contained the rogue**.
 - You confirmed **every tile green** and wrote a structured **ServiceNow post-incident report** with severity, timeline, root cause, and remediation.
+
+**After the course:** your instructor tears down the stacks. The fixes you made by hand (route, IAM policy, Helm value, rogue) are not recorded in Terraform. To reset your stack to the healthy baseline yourself, run `terraform apply -var scenario=healthy` from `~/io-108/lab_environment/lab_env_student` (check the small plan, type `yes`, press **Enter**), then `./deploy_app.sh`. If you used the CLI in Task 2, you can also delete the Reachability Analyzer objects: `aws ec2 delete-network-insights-analysis --network-insights-analysis-id "$NIA" --region "$REGION"`, then `aws ec2 delete-network-insights-path --network-insights-path-id "$NIP" --region "$REGION"`.
 
 ## Course Wrap-up
 

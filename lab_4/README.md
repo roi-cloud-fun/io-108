@@ -52,48 +52,78 @@ By the end of this lab, you will be able to:
 
 ## Pre-Lab Setup
 
-Run from a local clone or AWS CloudShell.
+Run **everything** in this lab on your **lab host**, as `ec2-user`. Connect with Session Manager (Lab 1, *Start Here*, step 1), then run `sudo su - ec2-user`.
 
-1. **Materialize this lab's incident** (replace `user01` with your assigned id):
+1. **Inject this lab's incident.** Go to the Terraform directory and apply the `lab4` scenario (your id and region come from `terraform.tfvars`, set in Lab 1):
 
     ```bash
-    cd lab_environment/lab_env_student
-    terraform plan  -var scenario=lab4                       # student_id + region from terraform.tfvars (Lab 0)
-    terraform apply -var scenario=lab4 -auto-approve
+    cd ~/io-108/lab_environment/lab_env_student
+    terraform apply -var scenario=lab4
+    ```
+
+    Terraform takes about a minute to compare your stack with the code, then prints a **plan** and stops at a confirmation prompt:
+
+    ```
+    Plan: 0 to add, 2 to change, 0 to destroy.
+
+    Do you want to perform these actions?
+      Terraform will perform the actions described above.
+      Only 'yes' will be accepted to approve.
+
+      Enter a value:
+    ```
+
+    **Check the `Plan:` line first.** Expect a small plan: about **2–4 to change, 0–2 to add, 0 to destroy**. It lists `aws_lambda_function.health_checker` and `aws_cloudwatch_dashboard.incident_board`. Coming from Lab 3, it may also list `aws_ec2_instance_state.rogue[0]` (add) and `aws_lambda_function.report_generator` (change).
+
+    - **If it matches,** type **`yes`** and press **Enter**. Terraform will not continue until you do, and anything other than `yes` cancels.
+    - **If it wants to add dozens or 100+ resources, or destroy anything unexpected,** type **`no`**, press **Enter**, and tell your instructor.
+
+    > **Expected Result:** After about a minute, Terraform prints **`Apply complete! Resources: 0 added, 2 changed, 0 destroyed.`** (your numbers match your plan), followed by a list of outputs.
+
+    Then redeploy the app so it picks up the new database target (1–5 minutes):
+
+    ```bash
     ./deploy_app.sh
     ```
+
+    > **Expected Result:** The script prints `db host:` followed by an endpoint containing **`.cluster-ro-`** (the reader), and ends with `Deploy complete. Next steps:`. A `WARNING: orders-api is not Ready` line is acceptable under a fault scenario.
 <!-- source: course_outline_v3.md §"Lab 4" -->
 
-2. **Capture outputs:**
+2. **Set** this lab's variables. Re-run this whole block any time you reconnect (after `sudo su - ec2-user`):
 
     ```bash
-    export REGION=$(terraform output -raw region)
-    export STUDENT_ID=$(terraform output -raw student_id)
-    export DASHBOARD=$(terraform output -raw incident_board_dashboard_name)
+    cd ~/io-108/lab_environment/lab_env_student
+    echo "SID=$SID REGION=$REGION"
+    STUDENT_ID=$SID
     export WRITER=$(terraform output -raw aurora_cluster_endpoint)
     export READER=$(terraform output -raw aurora_reader_endpoint)
     export APP_DB_HOST=$(terraform output -raw app_db_host)
     export SECRET_ARN=$(terraform output -raw aurora_master_secret_arn)
     export ROGUE_IP=$(terraform output -raw rogue_private_ip)
     export ROGUE_ID=$(terraform output -raw rogue_instance_id)
-    echo "Writer (cluster) endpoint: $WRITER"
-    echo "Reader endpoint:           $READER"
-    echo "App is currently using:    $APP_DB_HOST"
-    echo "Rogue private IP:          $ROGUE_IP"
-    ```
-
-    Notice `APP_DB_HOST` matches the **reader** endpoint - that is the injected fault.
-
-3. **Get the DB password** into your shell for the `psql` steps later (managed master credentials in Secrets Manager):
-
-    ```bash
     export PGPASSWORD=$(aws secretsmanager get-secret-value --secret-id "$SECRET_ARN" \
       --region "$REGION" --query SecretString --output text | jq -r .password)
     export PGUSER=orders_admin
     export PGDATABASE=orders
+    echo "Writer (cluster) endpoint: $WRITER"
+    echo "Reader endpoint:           $READER"
+    echo "App is currently using:    $APP_DB_HOST"
+    echo "Rogue instance / IP:       $ROGUE_ID / $ROGUE_IP"
+    echo "Secret ARN:                $SECRET_ARN"
+    echo "DB password length:        ${#PGPASSWORD}"
     ```
 
-4. **Start a small `psql` client pod** inside the cluster; later steps run queries through it:
+    > **Expected Result:** The first line shows your own id and region (for example `SID=user01 REGION=us-east-1`). If it is blank, finish Lab 1 *Start Here* step 3. Then check:
+    >
+    > - The writer endpoint contains **`.cluster-`** and the reader contains **`.cluster-ro-`**.
+    > - `App is currently using` matches the **reader**. That is the injected fault.
+    > - The rogue line shows an `i-...` id and a `10.x.x.x` address.
+    > - The secret ARN starts with `arn:aws:secretsmanager:`.
+    > - `DB password length` is a number greater than **0**. The password itself is never printed.
+    >
+    > If any value is blank or the length is `0`, make sure you are in `~/io-108/lab_environment/lab_env_student` and re-run the block.
+
+3. **Start a small `psql` client pod** inside the cluster. `psql` is the PostgreSQL command-line client, and later steps run queries through this pod. The pod receives the password from step 2 when it is created:
 
     ```bash
     kubectl -n orders run psql-client --restart=Never \
@@ -102,14 +132,18 @@ Run from a local clone or AWS CloudShell.
     kubectl -n orders wait --for=condition=Ready pod/psql-client --timeout=120s
     ```
 
-    (If it already exists from an earlier attempt, run `kubectl -n orders delete pod psql-client` first.)
+    > **Expected Result:** `pod/psql-client created`, then after 30–90 seconds (first image download) `pod/psql-client condition met`.
+    >
+    > If you see `AlreadyExists`, the pod is left over from an earlier attempt. If your password changed or the pod is not `Running`, run `kubectl -n orders delete pod psql-client` (prints `pod "psql-client" deleted`), then re-run this step. Otherwise reuse it.
+
+> **Reconnected?** Sessions time out when idle. Start a new session, run `sudo su - ec2-user`, then re-run the step 2 block. Do **not** re-run step 1 (it re-applies the fault) or step 3 (the pod is still running).
 <!-- source: Lab_4_narrative.md §"ConfigMap/Secret for database URL" -->
 
 ---
 
 ## Task 1: Confirm "Reachable but Not Writable"
 
-1. **Open** your incident board (`$DASHBOARD`) and find the **Lab 4** band:
+1. **Open** your incident board: **CloudWatch console** (your region) → **Dashboards** → **`io108-<your-id>-incident-board`**. Tiles refresh about every minute, so allow 1–2 minutes after the apply. Find the **Lab 4** band:
 
     - **Aurora reachable** (`aurora_reachable`) - **GREEN**
     - **Aurora writable (writer endpoint)** (`aurora_writable`) - **RED**
@@ -125,7 +159,7 @@ Run from a local clone or AWS CloudShell.
     ```
     <!-- source: Lab_4_narrative.md §"Identify Affected Applications" -->
 
-    Expected: `cannot execute INSERT in a read-only transaction` (or `UPDATE`/`DELETE`).
+    Expected: a Python error (a *traceback*) whose last line looks like `pg8000.exceptions.DatabaseError: {... 'M': 'cannot execute INSERT in a read-only transaction' ...}`. If nothing matches, wait 30 seconds and re-run. The worker posts an order every 30 seconds, and each post fails this way.
 
 > **Expected Result:** `aurora_writable` is red, the app logs the read-only error, and `aurora_reachable` confirms the DB is up. Record the incident start time.
 
@@ -140,9 +174,16 @@ Run from a local clone or AWS CloudShell.
     ```
     <!-- source: Module_3_narrative.md §"read replica" -->
 
-    <!-- source: Module_3_narrative.md §"read replica" -->
+    `kubectl exec` runs a command inside the pod. Expected output:
 
-    Expected: `pg_is_in_recovery` returns **`t`** (true) — this connection is on a read replica, which is read-only by definition.
+    ```
+     pg_is_in_recovery
+    -------------------
+     t
+    (1 row)
+    ```
+
+    **`t`** (true) means this connection is on a *read replica*, a read-only copy of the database. If you get `password authentication failed` or `no password supplied`, re-run Pre-Lab step 2, then delete and recreate the pod (Pre-Lab step 3).
 
 4. **Compare** against the cluster (writer) endpoint:
 
@@ -151,16 +192,14 @@ Run from a local clone or AWS CloudShell.
     ```
     <!-- source: Module_3_narrative.md §"always tracks the current primary" -->
 
-    <!-- source: Module_3_narrative.md §"always tracks the current primary" -->
-
-    Expected: returns **`f`** (false) — the cluster endpoint always points at the current writer.
+    Expected: the same table, but with **` f`** (false) on the value line. The cluster endpoint always points at the current writer.
 
 > **The three Aurora endpoints - know which is which:**
 > - **Cluster (writer) endpoint** — always points at the current primary; use it for read-write workloads. Survives failover automatically.
 > - **Reader endpoint** — load-balances across read replicas; read-only. Great for reporting, wrong for writes.
 > - **Instance endpoints** — target one specific instance by name; brittle, because that instance can become a reader or be replaced during failover.
 >
-> Open the **RDS console -> Databases -> your cluster -> Connectivity & security** and read all three off the page so you can recognize them by shape next time.
+> Open the **RDS console → Databases → `io108-<your-id>-aurora` → Connectivity & security** tab and read all three off the page so you can recognize them by shape next time. The writer contains `.cluster-`, the reader `.cluster-ro-`, and each instance endpoint starts with the instance name (`io108-<your-id>-aurora-0`, `-1`).
 
 ---
 
@@ -172,34 +211,62 @@ Run from a local clone or AWS CloudShell.
     that also turns the tile green is to correct the wiring in Terraform and redeploy, returning
     the DB target from the reader to the cluster/writer endpoint:
 
+    Make sure you are in the Terraform directory, then apply the healthy scenario:
+
     ```bash
-    terraform apply -var scenario=healthy -auto-approve    
+    cd ~/io-108/lab_environment/lab_env_student
+    terraform apply -var scenario=healthy
     ```
     <!-- source: Lab_4_narrative.md §"use cluster endpoint" -->
+
+    Terraform prints a plan and stops at the same prompt as Pre-Lab step 1:
+
+    ```
+    Plan: 0 to add, 2 to change, 0 to destroy.
+
+    Do you want to perform these actions?
+      Terraform will perform the actions described above.
+      Only 'yes' will be accepted to approve.
+
+      Enter a value:
+    ```
+
+    **Check the `Plan:` line first.** Expect a small plan: about **2–4 to change, 0–2 to add, 0 to destroy**. It lists `aws_lambda_function.health_checker` (the probe's DB target) and `aws_cloudwatch_dashboard.incident_board`.
+
+    - **If it matches,** type **`yes`** and press **Enter**.
+    - **If it wants to add dozens or 100+ resources, or destroy anything unexpected,** type **`no`**, press **Enter**, and tell your instructor.
+
+    > **Expected Result:** **`Apply complete! Resources: 0 added, 2 changed, 0 destroyed.`** (your numbers match your plan), followed by the outputs.
+
+    Then redeploy the app onto the writer endpoint (1–5 minutes). The script also waits for the new pods:
 
     ```bash
     ./deploy_app.sh
     ```
-    
     <!-- source: Lab_4_narrative.md §"use cluster endpoint" -->
+
+    > **Expected Result:** `db host:` now shows an endpoint containing **`.cluster-`** (not `.cluster-ro-`), and the script ends with `Deploy complete. Next steps:`.
 
     This points `app_db_host` back at the cluster (writer) endpoint for both the app and the
     probe. (The rogue is always-on and unaffected — you contain it in Task 5.)
 
     > **Immediate mitigation vs. durable fix.** In a live incident your first move might be to
-    > hot-patch the running pods to stop the bleeding —
-    > `helm upgrade orders charts/orders --namespace orders --reuse-values --set env.dbHost="$WRITER"`
-    > then `kubectl -n orders rollout restart deploy/orders-api` — which restores writes within
-    > seconds. That is a valid first action, but it only changes the live pods; the board's
+    > hot-patch the running pods to stop the bleeding. From `~/io-108/lab_environment/lab_env_student`, run
+    > `helm upgrade orders charts/orders --namespace orders --reuse-values --set env.dbHost="$WRITER"`.
+    > Changing the value rolls the pods automatically, which restores writes within a minute or two.
+    > That is a valid first action, but it only changes the live pods; the board's
     > `aurora_writable` probe follows the Terraform-declared DB target, so reconcile Terraform
     > (above) to actually close the incident on the board.
 
-6. **Restart** the deployment if you used the hot-patch mitigation, so pods reconnect:
+6. **Confirm** the new pods are running (`deploy_app.sh` already waited, so this normally returns at once; allow up to 3 minutes):
 
     ```bash
     kubectl -n orders rollout status deploy/orders-api --timeout=180s
+    kubectl -n orders exec deploy/orders-api -- printenv DB_HOST
     ```
 <!-- source: Lab_4_narrative.md §"restart the pods so they pick up the new configuration" -->
+
+    > **Expected Result:** `deployment "orders-api" successfully rolled out`, then the same endpoint as `$WRITER` (contains `.cluster-`). If `rollout status` times out, run it again; the pods install packages at startup.
 
 7. **Verify** writes succeed now:
 
@@ -209,11 +276,20 @@ Run from a local clone or AWS CloudShell.
     ```
     <!-- source: Lab_4_narrative.md §"Submit test order, verify processing" -->
 
-    <!-- source: Lab_4_narrative.md §"Submit test order, verify processing" -->
+    Expected: `CREATE TABLE` (or, on a re-run, `NOTICE:  relation "lab4_writecheck" already exists, skipping`), then a new `id` and `INSERT 0 1`:
 
-    Expected: the `INSERT` returns a new `id` - writes work.
+    ```
+     id
+    ----
+      1
+    (1 row)
 
-> **Expected Result:** Within 1-2 minutes the **Aurora writable** (`aurora_writable`) tile turns **GREEN**. The app can persist orders again. Record recovery time.
+    INSERT 0 1
+    ```
+
+    The `INSERT` returned a new `id`, so writes work. An error containing `read-only transaction` means you are still on the reader; check that `$WRITER` contains `.cluster-` (Pre-Lab step 2).
+
+> **Expected Result:** Within 1–2 minutes of the apply, the **Aurora writable** (`aurora_writable`) tile turns **GREEN**. The app can persist orders again. Record recovery time.
 
 > **What Just Happened?** Nothing was wrong with the database, the network, or the credentials. The app was simply pointed at a read-only target. In a real failover, the *same* fix matters: applications must use the cluster endpoint so they follow the writer automatically — hard-coding an instance or reader endpoint is what turns a 30-second failover into an outage.
 
@@ -234,23 +310,29 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has held 
     ```
     <!-- source: Module_3_narrative.md §"the source address on the query is the tell" -->
 
-    <!-- source: Module_3_narrative.md §"the source address on the query is the tell" -->
+    You will see several rows: the orders-api pods, the health-checker Lambda, and this `psql` session. Compare each `client_addr` with the rogue IP from Pre-Lab step 2 (`echo $ROGUE_IP`). To show only the rogue's sessions, filter on its address:
 
-    Compare the `client_addr` values against the rogue IP you captured (`$ROGUE_IP`). The rogue's source IP will appear holding a long-lived, benign-looking session (a `pg_sleep` that keeps one connection open) — exactly the kind of low-and-slow access that hides in plain sight.
+    ```bash
+    kubectl -n orders exec psql-client -- psql -h "$WRITER" -U "$PGUSER" -d "$PGDATABASE" -c \
+      "SELECT pid, client_addr, state, query FROM pg_stat_activity WHERE client_addr = '$ROGUE_IP';"
+    ```
 
-9. **Corroborate with Performance Insights.** Open **CloudWatch -> Database Insights** (or the RDS console's Performance Insights view), select your writer instance, and slice the DB load **by host**. The rogue's host shows up as a contributor distinct from the application pods. This is the GUI view of the same evidence — useful when you cannot get a psql session.
+    Expected: one row whose `client_addr` is the rogue IP, `state` is `active`, and `query` is `SELECT pg_sleep(300)`. That is a benign-looking query that holds one connection open for 5 minutes and is then reopened: exactly the kind of low-and-slow access that hides in plain sight. If it shows `(0 rows)`, wait a minute and re-run; the rogue reconnects within seconds of each session ending.
 
-10. **Corroborate with connection logs.** The cluster has `log_connections` and `log_disconnections` enabled. In **CloudWatch Logs**, open the log group `/aws/rds/cluster/io108-<your-id>-aurora/postgresql` and filter for the rogue IP:
+9. **Corroborate with Performance Insights.** Performance Insights records which clients put load on the database over time. In the **RDS console → Databases**, select the writer instance **`io108-<your-id>-aurora-0`** (or `-1`, whichever shows *Writer instance* in the **Role** column). Open the **Monitoring** tab and choose **Performance Insights** (it may open in CloudWatch **Database Insights**). Set the time range to **Last 1 hour** and change **Slice by** to **Hosts**. Look for a host matching `$ROGUE_IP`, shown as a load contributor separate from the application pods. Its load shows a sleep wait (`PgSleep`), which is the rogue's `pg_sleep`. This is the GUI view of the same evidence, useful when you cannot get a psql session.
+
+10. **Corroborate with connection logs.** The cluster has `log_connections` and `log_disconnections` enabled, so every new session writes a line to the log group `/aws/rds/cluster/io108-<your-id>-aurora/postgresql`. Search the last hour for the rogue IP (about 10–30 seconds):
 
     ```bash
     aws logs filter-log-events \
       --log-group-name "/aws/rds/cluster/io108-${STUDENT_ID}-aurora/postgresql" \
+      --start-time $(( ($(date +%s) - 3600) * 1000 )) \
       --filter-pattern "\"$ROGUE_IP\"" --region "$REGION" \
       --query 'events[].[message]' --output text | grep 'connection received' | tail -10
     ```
     <!-- source: Module_3_narrative.md §"rogue IP we are hunting" -->
 
-    Expected: repeated `connection received: host=<rogue IP>` lines about every 5 minutes, each time its session is reopened.
+    Expected: up to ten lines containing `connection received: host=<rogue IP> port=<number>`, about 5 minutes apart: one each time the rogue reopens its session. No output? Check that `echo $STUDENT_ID $ROGUE_IP` prints both values (re-run Pre-Lab step 2 if not).
 
 > **Three lenses, one conclusion:** `pg_stat_activity` (live), Performance Insights (top SQL by host, historical), and the connection log (audit trail) all point at the same client IP. In an investigation you want at least two independent lenses agreeing before you take containment action.
 
@@ -258,7 +340,7 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has held 
 
 ## Task 5: Lock Out the Rogue and Confirm Green
 
-11. **Revoke the rogue's network path** to Aurora. The rogue reaches the database through a dedicated security-group ingress rule. Remove it so new connections from the rogue are dropped at the SG:
+11. **Revoke the rogue's network path** to Aurora. A *security group* (SG) is a firewall attached to a resource, and an *ingress rule* allows traffic in. The rogue reaches the database through a dedicated ingress rule on Aurora's SG. First look up the two SG ids and check them:
 
     ```bash
     ROGUE_SG=$(aws ec2 describe-instances --instance-ids "$ROGUE_ID" --region "$REGION" \
@@ -266,10 +348,18 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has held 
     AURORA_SG=$(aws ec2 describe-security-groups --region "$REGION" \
       --filters "Name=group-name,Values=io108-${STUDENT_ID}-aurora-sg" \
       --query 'SecurityGroups[0].GroupId' --output text)
+    echo "ROGUE_SG=$ROGUE_SG AURORA_SG=$AURORA_SG"
+    ```
+
+    Both values must start with `sg-`. If either is `None` or blank, re-run Pre-Lab step 2, then this block. Then remove the rule, so new connections from the rogue are dropped at the SG:
+
+    ```bash
     aws ec2 revoke-security-group-ingress --group-id "$AURORA_SG" --region "$REGION" \
       --protocol tcp --port 5432 --source-group "$ROGUE_SG"
     ```
 <!-- source: facts_extracted_v2.md §"Security group rules" -->
+
+    > **Expected Result:** JSON containing `"Return": true`. If you get `InvalidPermission.NotFound`, the rule is already gone; continue.
 
 12. **Stop the rogue instance** to fully contain it (this also clears the Lab 1 `rogue_contained` tile if it is still red):
 
@@ -278,9 +368,13 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has held 
     ```
 <!-- source: Module_3_narrative.md §"rogue IP we are hunting" -->
 
-13. **Confirm** no rogue sessions remain. Re-run the `pg_stat_activity` query from Task 4 step 8; the rogue IP should no longer appear (a session already open can linger up to ~5 minutes, and the tile lags it by another 1-2).
+    > **Expected Result:** JSON showing `"CurrentState"` with `"Name": "stopping"` (or `"stopped"` if it was already stopped).
 
-> **Expected Result:** `rogue_contained` goes green within 1-3 minutes. **Aurora: no rogue sessions** (`aurora_no_rogue`) turns **GREEN** once the rogue's last open session expires: allow up to 8 minutes.
+13. **Confirm** no rogue sessions remain. Re-run the filtered `pg_stat_activity` query from step 8 (the one with `WHERE client_addr = '$ROGUE_IP'`). A session that was already open can linger for several minutes, so repeat every couple of minutes until it prints `(0 rows)`.
+
+> **Expected Result:** `rogue_contained` goes green within 1–3 minutes. **Aurora: no rogue sessions** (`aurora_no_rogue`) turns **GREEN** once the rogue's last open session expires: allow up to 8 minutes.
+>
+> **Do not run `terraform apply` again in this lab.** Applying any scenario except `lab2` or `lab3` restarts the rogue and recreates the ingress rule you just revoked.
 
 > **What Just Happened?** You did not just block an IP - you removed the *path* (the SG ingress rule) and contained the *asset* (the instance). Blocking only the symptom would let the rogue reconnect from a new address; removing the authorized path and stopping the instance closes the incident.
 
@@ -290,15 +384,22 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has held 
 
 ### `aurora_writable` stays red after repointing
 
-**Check:** Confirm the running pods actually use the writer endpoint: `kubectl -n orders exec deploy/orders-api -- printenv | grep -i dbhost` (or check the value you set). Make sure you ran `rollout restart` — existing pods keep their old connection until recycled.
+**Check:** Confirm the running pods actually use the writer endpoint: `kubectl -n orders exec deploy/orders-api -- printenv DB_HOST` should print the same value as `echo $WRITER` (contains `.cluster-`, not `.cluster-ro-`). If not, repeat step 5 (apply `healthy`, type `yes`, then `./deploy_app.sh`). The tile follows the Terraform target, so it stays red until that apply completes. Allow 1–2 minutes after it.
 
 ### `psql` pod cannot connect at all (timeout)
 
-**Check:** The `psql-client` pod must run in the `orders` namespace so it inherits the path to Aurora's security group. Confirm `$PGPASSWORD` is set and you are using the right endpoint variable.
+**Check:** The `psql-client` pod must run in the `orders` namespace so it inherits the path to Aurora's security group. Run `echo "$WRITER $READER ${#PGPASSWORD}"`: both endpoints must be present and the length above 0. If they are blank, re-run Pre-Lab step 2. If the password was blank when you created the pod, delete and recreate it (Pre-Lab step 3).
 
 ### `aurora_no_rogue` stays red
 
-**Check:** The probe counts sessions from the rogue IP. If you only stopped the instance but a session was mid-flight, give it up to ~5 minutes. Confirm the SG ingress rule was actually revoked: `aws ec2 describe-security-groups --group-ids "$AURORA_SG"` should no longer list the rogue SG on port 5432.
+**Check:** The probe counts sessions from the rogue IP. If you only stopped the instance but a session was mid-flight, give it up to ~8 minutes. Confirm the SG ingress rule was actually revoked:
+
+```bash
+aws ec2 describe-security-groups --group-ids "$AURORA_SG" --region "$REGION" \
+  --query "SecurityGroups[0].IpPermissions[?FromPort==\`5432\`].UserIdGroupPairs[].GroupId" --output text
+```
+
+The output must **not** contain the `$ROGUE_SG` id (`echo $ROGUE_SG`). If it does, repeat step 11.
 
 ---
 
@@ -331,6 +432,14 @@ The `aurora_no_rogue` tile is still red. Since Lab 0, a rogue instance has held 
 - You traced the rogue client three ways — **`pg_stat_activity`**, **Performance Insights**, **connection logs** - identified it by source IP, and contained it by revoking its SG path and stopping the instance.
 
 **Before you move on:** Log this in **ServiceNow** as a **P1** (downgrading to P2 after the writer repoint stabilizes). Capture: start time, root cause (app pointed at reader endpoint; separately, rogue sessions from `$ROGUE_IP`), remediation (repoint to cluster endpoint; revoke rogue SG ingress; stop rogue instance), and recovery times for both tiles.
+
+**Clean up** the client pod:
+
+```bash
+kubectl -n orders delete pod psql-client
+```
+
+Expected: `pod "psql-client" deleted`.
 
 ## Next Steps
 
