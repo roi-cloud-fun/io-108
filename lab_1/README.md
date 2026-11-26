@@ -314,7 +314,11 @@ By the end of this lab, you will:
 
 ## Task 3: Confirm the Root Cause in IAM
 
-15. **Read** the role's inline policy directly. The IRSA role is `io108-$SID-orders-api-role` and its inline policy is `io108-$SID-orders-api-inline`:
+15. **Read** the role's inline policy directly. The IRSA role is `io108-<your-id>-orders-api-role` and its inline policy is `io108-<your-id>-orders-api-inline`. Use either path; both show the same policy.
+
+    **Console path:** In the AWS console search bar, type **IAM** and open it. In the left menu choose **Roles**, type `orders-api` in the search box, and open **`io108-<your-id>-orders-api-role`**. On the **Permissions** tab, under **Permissions policies**, click the **+** next to **`io108-<your-id>-orders-api-inline`** (type **Customer inline**) to expand it, then choose **JSON** to see the raw policy.
+
+    **CLI path:**
 
     ```bash
     aws iam get-role-policy \
@@ -324,9 +328,26 @@ By the end of this lab, you will:
     ```
     <!-- source: facts_extracted_v2.md §"Common IAM Issues" -->
 
-    The output is JSON. Look under `PolicyDocument` → `Statement`. In the broken state it contains a single, harmless `s3:ListBucket` statement on the reports bucket — and **nothing else**. The `secretsmanager:GetSecretValue` permission and the S3 object (`PutObject`/`GetObject`) permissions are gone.
+    The CLI output is JSON; look under `PolicyDocument` → `Statement`. Either way, in the broken state the policy contains a single, harmless `s3:ListBucket` statement on the reports bucket — and **nothing else**. The `secretsmanager:GetSecretValue` permission and the S3 object (`PutObject`/`GetObject`) permissions are gone.
 
-16. **Prove** the denial with the IAM policy simulator rather than guessing. Simulate the role against the exact action and resource from the log:
+16. **Prove** the denial with the IAM policy simulator rather than guessing. The simulator evaluates the role's real policies against an exact action and resource and tells you whether AWS would allow it, without changing anything. Simulate the role against the action and resource from the log.
+
+    **Console path:** First print the secret ARN you will paste into the simulator:
+
+    ```bash
+    echo "$SECRET_ARN"
+    ```
+
+    Open the IAM Policy Simulator at **https://policysim.aws.amazon.com** (it opens in its own tab and uses your current console sign-in). Then:
+
+    - In the left pane, change **Users** to **Roles** and select **`io108-<your-id>-orders-api-role`**. Its policies appear under **Permission policies**.
+    - In the right pane, for **Select service** choose **Secrets Manager**, and for **Select actions** choose **GetSecretValue**.
+    - Expand the **GetSecretValue** row. In **Resource**, paste the `SECRET_ARN` value you printed above.
+    - Choose **Run Simulation**.
+
+    The **Permission** column shows **denied**, and expanding the row shows **Implicitly denied (no matching statements)**. To check the S3 permission too, choose **Clear Results**, select service **Amazon S3**, action **PutObject**, resource `arn:aws:s3:::<your reports bucket>/*` (the bucket name is in `$REPORTS_BUCKET`), and run it again: also **denied**.
+
+    **CLI path:**
 
     ```bash
     aws iam simulate-principal-policy \
@@ -342,7 +363,7 @@ By the end of this lab, you will:
     ```
 <!-- source: facts_extracted_v2.md §"IAM Policy Simulator" -->
 
-> **Expected Result:** Each command prints one word, **`implicitDeny`** — the action is denied because no statement allows it. If you get `Invalid ARN` or a blank value error, re-run step 11. You have now confirmed the root cause without touching the running app: the role's policy was stripped of the permissions the workload needs.
+> **Expected Result:** The console shows **denied / Implicitly denied** for both actions, and each CLI command prints one word, **`implicitDeny`** — the action is denied because no statement allows it. If you get `Invalid ARN` or a blank value error, re-run step 11. You have now confirmed the root cause without touching the running app: the role's policy was stripped of the permissions the workload needs.
 
 > **IAM evaluation, briefly.** A request is allowed only if an `Allow` matches and no `Deny` overrides it. With the permission simply absent, the request falls through to the default **implicit deny**. There is no explicit `Deny` here to hunt for — the fix is to *add back* the missing `Allow`, not to remove a block.
 
@@ -357,7 +378,31 @@ By the end of this lab, you will:
     echo "secret=$SECRET_ARN"
     ```
 
-    Both must show a value (the secret starts with `arn:aws:secretsmanager:`). If either is blank, re-run step 11. Then put the corrected inline policy back:
+    Both must show a value (the secret starts with `arn:aws:secretsmanager:`). If either is blank, re-run step 11. Then put the corrected inline policy back, using either path.
+
+    **Console path:** Print the corrected policy with your real bucket and secret filled in:
+
+    ```bash
+    REPORTS_ARN="arn:aws:s3:::$REPORTS_BUCKET"
+    cat <<JSON
+    {
+      "Version": "2012-10-17",
+      "Statement": [
+        { "Sid": "ReportsBucketObjects", "Effect": "Allow",
+          "Action": ["s3:PutObject","s3:GetObject"],
+          "Resource": "$REPORTS_ARN/*" },
+        { "Sid": "ReportsBucketList", "Effect": "Allow",
+          "Action": ["s3:ListBucket"], "Resource": "$REPORTS_ARN" },
+        { "Sid": "ReadAuroraMasterSecret", "Effect": "Allow",
+          "Action": ["secretsmanager:GetSecretValue"], "Resource": "$SECRET_ARN" }
+      ]
+    }
+    JSON
+    ```
+
+    Select and copy the whole printed JSON, from the first `{` to the last `}`. In the IAM console, open **`io108-<your-id>-orders-api-role`** again (step 15). On the **Permissions** tab, select the checkbox next to **`io108-<your-id>-orders-api-inline`** and choose **Edit**. Choose the **JSON** tab, select everything in the editor and delete it, then paste the policy you copied. Choose **Next**, then **Save changes**. A green banner confirms the policy was updated. (If the editor shows a red error, the paste was incomplete: copy the whole block again.)
+
+    **CLI path:**
 
     ```bash
     REPORTS_ARN="arn:aws:s3:::$REPORTS_BUCKET"
@@ -384,9 +429,13 @@ By the end of this lab, you will:
     ```
 <!-- source: Lab_1_narrative.md §"Phase 5: Remediate and Validate" -->
 
-    > **Expected Result:** The command returns to the `$` prompt with **no output**. That is success. Any line starting `An error occurred` (for example `MalformedPolicyDocument`) means it failed: re-check the two `echo` values and run it again.
+    > **Expected Result:** In the console, the green **policy updated** banner. On the CLI, the command returns to the `$` prompt with **no output**. That is success. Any line starting `An error occurred` (for example `MalformedPolicyDocument`) means it failed: re-check the two `echo` values and run it again.
 
-18. **Re-simulate** to confirm the fix at the IAM layer before touching the app:
+18. **Re-simulate** to confirm the fix at the IAM layer before touching the app.
+
+    **Console path:** In the Policy Simulator tab, reload the page, select the role again (the simulator caches the old policy until you do), and run the same **GetSecretValue** simulation on your secret ARN. The **Permission** column now shows **allowed**.
+
+    **CLI path:**
 
     ```bash
     aws iam simulate-principal-policy \
@@ -397,7 +446,7 @@ By the end of this lab, you will:
     ```
     <!-- source: facts_extracted_v2.md §"IAM Policy Simulator" -->
 
-    This now returns **`allowed`**. If it still says `implicitDeny`, wait 15 seconds (IAM changes take a moment to spread) and run it again.
+    This now returns **`allowed`** (console: **allowed**). If it still says `implicitDeny` / **denied**, wait 15 seconds (IAM changes take a moment to spread) and run it again.
 
 19. **Restart** the `orders-api` pods so they re-attempt the secret read with the restored permission (IRSA credentials are assumed at runtime; a fresh attempt picks up the new policy immediately):
 
