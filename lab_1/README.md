@@ -194,7 +194,7 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
 
     > **Expected Result:** Seven `PASS:` lines (EKS nodes, orders pods, orders-api `/health`, Aurora, report workflow, report in S3, dashboard), ending with **`ALL CHECKS PASSED -- your stack is healthy.`**
     >
-    > **Troubleshooting:** If `verify.sh` shows `FAIL:` only for the report workflow or the report in S3, wait 5 minutes and run `./verify.sh` again; reports are produced every 5 minutes. For any other `FAIL:`, tell your instructor.
+    > **Troubleshooting:** If `verify.sh` shows `FAIL:` only for the report workflow or the report in S3, wait 5 minutes and run `./verify.sh` again; reports are produced every 5 minutes. If the `orders pods` and `/health` checks fail, run `kubectl -n orders get pods`: **`No resources found in orders namespace`** means the application was never installed on your stack (Lab 0's `deploy_app.sh` step). Tell your instructor; do not start the Scenario until it is installed. For any other `FAIL:`, tell your instructor.
 
 9. **Open** your incident board. In the AWS console search bar, type **CloudWatch** and open it. Check that the region selector at the top right matches your `REGION`. In the left menu choose **Dashboards**, then open **`io108-<your-id>-incident-board`** (for example `io108-user01-incident-board`; *not* the similarly named `...-incident-dashboard`).
 
