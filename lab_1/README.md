@@ -74,7 +74,8 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
     STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \
       --name /io108/tfstate-bucket --query Parameter.Value --output text)
     echo "State bucket: $STATE_BUCKET"
-    aws s3 ls "s3://$STATE_BUCKET/io108/$SID/terraform.tfstate"
+    aws s3api head-object --bucket "$STATE_BUCKET" --key "io108/$SID/terraform.tfstate" \
+      --query '[LastModified,ContentLength]' --output text
     aws eks describe-cluster --name io108-$SID-eks --region $REGION \
       --query cluster.status --output text
     aws rds describe-db-clusters --db-cluster-identifier io108-$SID-aurora --region $REGION \
@@ -91,13 +92,13 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
     > | Check | What you should see |
     > |---|---|
     > | State bucket | `State bucket: io108-tfstate-...` |
-    > | Your state file | one line: a date, a size, and `terraform.tfstate` |
+    > | Your state file | one line: a date and a size in bytes, e.g. `2026-11-25T16:58:00+00:00  412345` |
     > | Your EKS cluster | `ACTIVE` |
     > | Your Aurora cluster | `available` |
     > | The policy Lab 1 breaks | `io108-<your-id>-orders-api-inline` |
     > | Your rogue instance | `i-...   running` |
     >
-    > **If the state-file line is empty, or any command prints an error such as `ResourceNotFoundException`, `DBClusterNotFoundFault` or `NoSuchEntity`: stop.** Do not run Terraform. Re-check `SID` and `REGION` (step 3); if they are right, tell your instructor your stack is missing.
+    > **If `State bucket:` is followed by nothing, or any command prints an error such as `Not Found` / `404`, `Invalid bucket name`, `ResourceNotFoundException`, `DBClusterNotFoundFault` or `NoSuchEntity`: stop.** Do not run Terraform. Re-check `SID` and `REGION` (step 3); if they are right, tell your instructor your stack is missing.
 
     **What Lab 1 changes in this stack.** Everything else stays exactly as your instructor built it:
 

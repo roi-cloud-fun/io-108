@@ -111,13 +111,14 @@ By the end of this lab, you will:
     STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \
       --name /io108/tfstate-bucket --query Parameter.Value --output text)
     echo "State bucket: $STATE_BUCKET"
-    aws s3 ls "s3://$STATE_BUCKET/io108/$SID/terraform.tfstate"
+    aws s3api head-object --bucket "$STATE_BUCKET" --key "io108/$SID/terraform.tfstate" \
+      --query '[LastModified,ContentLength]' --output text
     ```
 
-    > **Expected Result:** The first line reads `State bucket: io108-tfstate-...`. For a stack that has not been built yet, the `aws s3 ls` command prints **nothing** and returns to the `$` prompt.
+    > **Expected Result:** The first line reads `State bucket: io108-tfstate-...`. For a stack that has not been built yet, the second command prints **`An error occurred (404) when calling the HeadObject operation: Not Found`**. That error is what you want here: no state file means no stack yet.
     >
-    > - **If `aws s3 ls` prints a line** (a date, a size, and `terraform.tfstate`), **your stack was already built for you. Stop: do not run the rest of this lab.** Go to **Lab 1, Start Here**.
-    > - **If `State bucket:` is blank or you see `ParameterNotFound`,** stop and tell your instructor.
+    > - **If the second command prints a date and a size** (e.g. `2026-11-25T16:58:00+00:00  412345`), **your stack was already built for you. Stop: do not run the rest of this lab.** Go to **Lab 1, Start Here**.
+    > - **If `State bucket:` is followed by nothing, or you see `ParameterNotFound` or `Invalid bucket name`,** stop and tell your instructor.
 
 5. **Point** Terraform at your stack. These commands write your id and region into `terraform.tfvars`, the file Terraform reads them from, so every later command is just `-var scenario=...`:
 
