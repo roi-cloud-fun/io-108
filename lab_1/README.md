@@ -39,11 +39,26 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
     sudo su - ec2-user
     ```
 
-3. **Set** your student id and region, and save them so they survive a reconnect:
+3. **Set** your student id and region, verify them, then save them so they survive a reconnect.
+
+    Set the two values:
 
     ```bash
     export SID=userNN             # <- your assigned student id, e.g. user01
     export REGION=us-east-1       # <- your assigned region
+    ```
+
+    **Verify** them before saving:
+
+    ```bash
+    echo "SID=$SID REGION=$REGION"
+    ```
+
+    You should see your own id and region, for example `SID=user01 REGION=us-east-1`. If either value is blank or still reads `userNN`, re-run the `export` lines above with the correct values. Do not continue until the output is right.
+
+    **Save** them to `~/.bashrc` only after they check out:
+
+    ```bash
     echo "export SID=$SID REGION=$REGION" >> ~/.bashrc
     ```
 
