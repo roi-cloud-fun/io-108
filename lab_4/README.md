@@ -65,6 +65,8 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
     terraform plan -var scenario=lab4
     ```
 
+    Terraform ends the plan with `Note: You didn't use the -out option to save this plan...`. That note is normal after every `terraform plan`; ignore it.
+
     After about a minute, Terraform prints a plan ending in a line like:
 
     ```
@@ -241,6 +243,8 @@ The app's DB target comes from Terraform (`deploy_app.sh` reads `app_db_host`), 
     terraform plan -var scenario=healthy
     ```
     <!-- source: Lab_4_narrative.md §"use cluster endpoint" -->
+
+    Terraform ends the plan with `Note: You didn't use the -out option to save this plan...`. That note is normal after every `terraform plan`; ignore it.
 
     The plan ends in a line like:
 

@@ -142,6 +142,8 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
     terraform plan -var scenario=healthy
     ```
 
+    Terraform ends the plan with `Note: You didn't use the -out option to save this plan...`. That note is normal after every `terraform plan`; ignore it.
+
     It takes about a minute, then ends with a `Plan:` line. **Check it.** It must read **`Plan: 2 to add, 0 to change, 2 to destroy.`** The resources listed above it are the two `aws_eks_access_*` entries that move cluster access to your lab host.
 
     - **If it matches,** go on to step 7.
@@ -256,6 +258,8 @@ Finish **Start Here** (steps 1–10) first. Inject this incident now, unless you
     ```bash
     terraform plan -var scenario=lab1
     ```
+
+    Terraform ends the plan with `Note: You didn't use the -out option to save this plan...`. That note is normal after every `terraform plan`; ignore it.
 
     It takes 15–60 seconds and ends with a `Plan:` line. **Check it.** It must read **`Plan: 0 to add, 2 to change, 0 to destroy.`**, and the two resources marked `~ update in-place` are:
 

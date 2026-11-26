@@ -154,6 +154,8 @@ By the end of this lab, you will:
     terraform plan -var scenario=healthy
     ```
 
+    Terraform ends the plan with `Note: You didn't use the -out option to save this plan...`. That note is normal after every `terraform plan`; ignore it.
+
     It takes about a minute and ends with a `Plan:` line. **Check it.** For a fresh build it reads about **`Plan: 126 to add, 0 to change, 0 to destroy.`** (the exact add count can differ by a few as the course is updated). The key check is **`0 to change, 0 to destroy`**.
 
     - **If it matches,** go on to step 8.
