@@ -160,20 +160,46 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
 
     > **Expected Result:** After about a minute, Terraform prints **`Apply complete! Resources: 2 added, 0 changed, 2 destroyed.`** followed by a list of outputs. You are returned to the `$` prompt.
 
-7. **Connect** `kubectl` to your cluster, then **verify** the baseline:
+7. **Connect** `kubectl` to your cluster, then **verify** it can reach the cluster:
 
     ```bash
     aws eks update-kubeconfig --name "$(terraform output -raw cluster_name)" --region $REGION
+    kubectl get pods -n kube-system
+    ```
+
+    `update-kubeconfig` prints one line, `Added new context arn:aws:eks:...:cluster/io108-<your-id>-eks to /home/ec2-user/.kube/config`. `kubectl` then lists the cluster's system pods.
+
+    > **Expected Result:** A table of about six pods, every one `Running` (names end in random characters):
+    >
+    > ```
+    > NAME                       READY   STATUS    RESTARTS   AGE
+    > aws-node-xxxxx             2/2     Running   0          2h
+    > aws-node-yyyyy             2/2     Running   0          2h
+    > coredns-xxxxxxxxxx-xxxxx   1/1     Running   0          2h
+    > coredns-xxxxxxxxxx-yyyyy   1/1     Running   0          2h
+    > kube-proxy-xxxxx           1/1     Running   0          2h
+    > kube-proxy-yyyyy           1/1     Running   0          2h
+    > ```
+    >
+    > **If you see `error: You must be logged in to the server (Unauthorized)`** or `the server has asked for the client to provide credentials`, step 6 did not finish: re-run step 6 and make sure you typed `yes`. If you see `couldn't get current server API group list` or a timeout, check that `REGION` is right (`echo $REGION`) and re-run this step.
+
+8. **Verify** the whole baseline with the course's check script (about 30 seconds):
+
+    ```bash
     ./verify.sh
     ```
 
-    `update-kubeconfig` prints one line, `Added new context arn:aws:eks:...:cluster/io108-<your-id>-eks to /home/ec2-user/.kube/config`. `verify.sh` then runs seven checks, printing `PASS:` or `FAIL:` for each. It takes about 30 seconds.
+    It runs seven checks and prints `PASS:` or `FAIL:` for each.
 
-> **Expected Result:** Seven `PASS:` lines (EKS nodes, orders pods, orders-api `/health`, Aurora, report workflow, report in S3, dashboard), ending with **`ALL CHECKS PASSED -- your stack is healthy.`** Then open the **CloudWatch console** in your assigned region, choose **Dashboards**, and open **`io108-<your-id>-incident-board`**. Every tile is green **except** `Rogue contained` and `Aurora: no rogue sessions`. Those two are red on purpose. Skim **Lab 0, Task 6** for what each tile means.
->
-> **Troubleshooting:** If `verify.sh` shows `FAIL:` for the report workflow or the report in S3, wait 5 minutes and run `./verify.sh` again; reports are produced every 5 minutes. If the EKS nodes, pods or `/health` checks fail with `Unauthorized` or `the server has asked for the client to provide credentials`, step 6 did not finish. Re-run step 6 and make sure you typed `yes`.
+    > **Expected Result:** Seven `PASS:` lines (EKS nodes, orders pods, orders-api `/health`, Aurora, report workflow, report in S3, dashboard), ending with **`ALL CHECKS PASSED -- your stack is healthy.`**
+    >
+    > **Troubleshooting:** If `verify.sh` shows `FAIL:` only for the report workflow or the report in S3, wait 5 minutes and run `./verify.sh` again; reports are produced every 5 minutes. For any other `FAIL:`, tell your instructor.
 
-> **Reconnecting later?** Sessions time out when idle, and a new session forgets every shell variable except `SID` and `REGION` (saved in step 3). Start a new session, run `sudo su - ec2-user`, then re-run the **"Re-establish your variables"** step of the lab you are on (in this lab, **Task 1, step 2**). It changes to the right directory and restores everything that lab uses. Do not repeat steps 3–7.
+9. **Open** your incident board. In the AWS console search bar, type **CloudWatch** and open it. Check that the region selector at the top right matches your `REGION`. In the left menu choose **Dashboards**, then open **`io108-<your-id>-incident-board`** (for example `io108-user01-incident-board`; *not* the similarly named `...-incident-dashboard`).
+
+    > **Expected Result:** Every tile is **green** except two: **`Rogue contained`** and **`Aurora: no rogue sessions`**. Those two are red on purpose; you hunt the rogue later in this lab and in Lab 4. Tiles refresh about once a minute; click the refresh icon (circular arrow) at the top right to update them. If any other tile is red, wait 2 minutes, refresh, and tell your instructor if it stays red. Skim **Lab 0, Task 6** for what each tile means.
+
+> **Reconnecting later?** Sessions time out when idle, and a new session forgets every shell variable except `SID` and `REGION` (saved in step 3). Start a new session, run `sudo su - ec2-user`, then re-run the **"Re-establish your variables"** step of the lab you are on (in this lab, **Task 1, step 2**). It changes to the right directory and restores everything that lab uses. Do not repeat steps 3–9.
 
 ---
 
@@ -183,7 +209,7 @@ It is mid-morning. A monitoring alert fires and your **`orders-api DB access (IR
 
 You open a **P2** incident in **ServiceNow** — the service is degraded but there is no data loss and no customer-facing outage yet. Your job: find why the API lost access, restore it, and then — because Operations has been carrying two known-red security tiles since the environment was built — finally run down the rogue principal that has been quietly talking to your database.
 
-**Inject this incident now**, unless your instructor tells you they already did. Finish **Start Here** (steps 1–7) first. Then re-apply your stack in the `lab1` scenario:
+**Inject this incident now**, unless your instructor tells you they already did. Finish **Start Here** (steps 1–9) first. Then re-apply your stack in the `lab1` scenario:
 
 ```bash
 cd ~/io-108/lab_environment/lab_env_student
