@@ -9,13 +9,13 @@ variable "region" {
 }
 
 variable "student_ids" {
-  description = "One lab host is created per id here. Use the SAME ids students pass as -var student_id (e.g. [\"s01\",\"s02\",...])."
+  description = "One lab host is created per id here. Use the SAME ids students pass as -var student_id (e.g. [\"user01\",\"user02\",...])."
   type        = list(string)
-  default     = ["s01", "s02", "s03", "s04", "s05", "s06", "s07", "s08"]
+  default     = ["user01", "user02", "user03", "user04", "user05", "user06", "user07", "user08"]
 }
 
 variable "student_regions" {
-  description = "Optional per-student region for their LAB STACK (e.g. {s01=\"us-east-1\", s02=\"us-west-2\", ...}). Put each student in their own region so dashboards/Container Insights don't collide in one region. Any id not listed falls back to var.region. The lab HOST itself stays in var.region regardless -- it drives the student's region via `terraform apply -var region=...`, baked into the host's welcome note."
+  description = "Optional per-student region for their LAB STACK (e.g. {user01=\"us-east-1\", user02=\"us-west-2\", ...}). Put each student in their own region so dashboards/Container Insights don't collide in one region. Any id not listed falls back to var.region. The lab HOST itself stays in var.region regardless -- it drives the student's region via `terraform apply -var region=...`, baked into the host's welcome note."
   type        = map(string)
   default     = {}
 }

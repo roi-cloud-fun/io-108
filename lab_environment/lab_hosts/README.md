@@ -20,7 +20,7 @@ entry points at the wrong principal. If the instructor pre-builds the stack, the
 ```bash
 cd lab_environment/lab_hosts
 terraform init
-terraform apply -var 'student_ids=["s01","s02","s03","s04","s05","s06","s07","s08"]'
+terraform apply -var 'student_ids=["user01","user02","user03","user04","user05","user06","user07","user08"]'
 terraform output connect_hint     # SSM start-session command per student
 ```
 
@@ -33,8 +33,8 @@ the student's region over public APIs); each host's welcome note bakes in the ri
 
 ```bash
 terraform apply \
-  -var 'student_ids=["s01","s02","s03","s04","s05"]' \
-  -var 'student_regions={s01="us-east-1",s02="us-west-2",s03="us-east-2",s04="eu-west-1",s05="ap-southeast-2"}'
+  -var 'student_ids=["user01","user02","user03","user04","user05"]' \
+  -var 'student_regions={user01="us-east-1",user02="us-west-2",user03="us-east-2",user04="eu-west-1",user05="ap-southeast-2"}'
 ```
 
 Each student then runs `terraform apply -var student_id=<id> -var region=<their region>` (it's in

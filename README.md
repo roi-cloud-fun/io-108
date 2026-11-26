@@ -46,12 +46,12 @@ A "rogue" instance queries Aurora alongside the legit app — the security throu
 
 ```bash
 cd lab_environment/lab_env_student
-cp terraform.tfvars.example terraform.tfvars   # set student_id (e.g. s01)
+cp terraform.tfvars.example terraform.tfvars   # set student_id (e.g. user01)
 STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \
   --name /io108/tfstate-bucket --query Parameter.Value --output text)
 terraform init -backend-config="bucket=$STATE_BUCKET" \
-  -backend-config="key=io108/s01/terraform.tfstate"
-terraform apply -var student_id=s01            # scenario defaults to "healthy"  (~15-20 min; EKS is the long pole)
+  -backend-config="key=io108/user01/terraform.tfstate"
+terraform apply -var student_id=user01            # scenario defaults to "healthy"  (~15-20 min; EKS is the long pole)
 ./deploy_app.sh                                 # kubeconfig + helm install + smoke test
 ./verify.sh                                     # Lab 0: PASS/FAIL on every component (your red/green board)
 ```
@@ -59,16 +59,16 @@ terraform apply -var student_id=s01            # scenario defaults to "healthy" 
 Then, per the lab guides, switch scenarios to break and fix:
 
 ```bash
-terraform apply -var student_id=s01 -var scenario=lab1   # inject the lab's fault
+terraform apply -var student_id=user01 -var scenario=lab1   # inject the lab's fault
 # ...diagnose with CloudWatch / CloudTrail / kubectl / psql, then fix in Terraform or kubectl...
-terraform apply -var student_id=s01 -var scenario=healthy # reset / confirm fix
+terraform apply -var student_id=user01 -var scenario=healthy # reset / confirm fix
 ```
 
 > **Run from a normal local clone or CloudShell — NOT a Google Drive / OneDrive synced folder.** The Lambda zips are packaged by `archive_file`, which hashes the vendored `app/lambda_build/` deps every plan; on a cloud-sync filesystem that is slow, and a sync client touching `.tfstate` mid-apply can corrupt state.
 
 ## Notes
 
-- `student_id` is lowercase alphanumeric, 2-12 chars (s01 … s08). It prefixes every named resource so 8 students share one account.
+- `student_id` is lowercase alphanumeric, 2-12 chars (user01 … user50). It prefixes every named resource so 8 students share one account.
 - The five fault scenarios are toggled by `var.scenario` (`faults.tf`). The `incidents/` directory is a placeholder for optional break-script equivalents.
 - `lab_env_shared/` is applied **once per account/region** by the instructor (CloudTrail + Config), not per student.
 - The committed `app/lambda_build/` is the vendored dependency set so students never run `pip`; `archive_file` just zips it deterministically. The generated `*.zip` files are gitignored.
