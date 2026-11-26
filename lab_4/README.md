@@ -157,7 +157,7 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
 
 ---
 
-## Task 2: Confirm "Reachable but Not Writable"
+## Task 2: Check the Incident Board: "Reachable but Not Writable"
 
 7. **Open** your incident board. In the AWS console search bar, type **CloudWatch** and open it. Check that the region at the top right matches your `REGION`. In the left menu choose **Dashboards**, then open **`io108-<your-id>-incident-board`**. Allow 1–2 minutes after the apply, and click the refresh icon (circular arrow) at the top right if the tiles look stale.
 
@@ -223,11 +223,11 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
 
 ---
 
-## Task 4: Repoint the App to the Writer Endpoint and Confirm Green
+## Task 4: Repoint the App to the Writer Endpoint
 
 The app's DB target comes from Terraform (`deploy_app.sh` reads `app_db_host`), and the `aurora_writable` probe checks that same target. So the fix is to apply the healthy scenario and redeploy.
 
-> **Why this matters.** Repointing the app fixes only the first problem. The healthy apply does **not** stop the rogue, and it keeps the rogue's database rule in place; you lock the rogue out yourself in Task 6.
+> **Why this matters.** Repointing the app fixes only the first problem. The healthy apply does **not** stop the rogue, and it keeps the rogue's database rule in place; you lock the rogue out yourself in Task 7.
 
 12. **Preview** the healthy scenario. This changes nothing. Make sure you are in the Terraform directory:
 
@@ -314,6 +314,10 @@ The app's DB target comes from Terraform (`deploy_app.sh` reads `app_db_host`), 
     >
     > An error containing `read-only transaction` means you are still on the reader; check that `$WRITER` contains `.cluster-` (step 5).
 
+---
+
+## Task 5: Check the Incident Board After the Fix
+
 17. **Confirm** on the board. Go back to your **`io108-<your-id>-incident-board`** tab, wait 1–2 minutes after the apply, and click the refresh icon.
 
     > **Expected Result:** **`Aurora writable (writer endpoint)`** is **green**. `Aurora: no rogue sessions` is still red; you fix that next. Record the recovery time and root cause in your incident notes: app pointed at the reader endpoint.
@@ -322,7 +326,7 @@ The app's DB target comes from Terraform (`deploy_app.sh` reads `app_db_host`), 
 
 ---
 
-## Task 5: Trace the Rogue Client with Query Tracing
+## Task 6: Trace the Rogue Client with Query Tracing
 
 The rogue instance (stopped in Lab 1, restarted by the `lab4` apply) holds a Postgres session open to Aurora using stolen master credentials. You will find it on the database itself.
 
@@ -367,7 +371,7 @@ The rogue instance (stopped in Lab 1, restarted by the `lab4` apply) holds a Pos
 
 ---
 
-## Task 6: Lock Out the Rogue and Confirm Green
+## Task 7: Lock Out the Rogue and Confirm Green
 
 > **Do not run `terraform apply` again after this point.** Any apply with `healthy`, `lab1`, `lab4` or `lab5` starts the rogue again and recreates the security-group rule you are about to remove, undoing this task.
 
