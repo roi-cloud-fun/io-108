@@ -280,43 +280,57 @@ The **Parallel** state sends the same input to every branch; each branch queues 
 
     > **Expected Result:** A short JSON block with an `executionArn` and a `startDate`. If you see `Invalid Arn` or `ParameterValidationError`, `$FANOUT_SFN` is blank: run steps 1 and 5 again.
 
-21. **List** both sink buckets. Wait about 15 seconds, then:
+21. **List** the NewRelic sink. Wait about 15 seconds after step 20, then:
 
     ```bash
-    echo "== NewRelic sink ==";  aws s3 ls "s3://$SINK_NR/"  --recursive | tail -3
-    echo "== SolarWinds sink =="; aws s3 ls "s3://$SINK_SW/" --recursive | tail -3
+    aws s3 ls "s3://$SINK_NR/" --recursive | tail -3
     ```
 
-    > **Expected Result:** Each listing ends with keys like `incidents/2026/11/26/072144-78d8c3ab.json` (date, UTC time `HHMMSS`, random suffix). Each bucket's copy has its **own** random suffix, so the same event has a different key in each bucket. Some objects are the 2-minute heartbeat or the alarm event, not your test.
+    > **Expected Result:** The last few objects, newest at the bottom, for example:
+    >
+    > ```
+    > 2026-11-26 07:21:32       1917 incidents/2026/11/26/072131-5224bc6e.json
+    > 2026-11-26 07:21:45        153 incidents/2026/11/26/072144-78d8c3ab.json
+    > 2026-11-26 07:22:07        115 incidents/2026/11/26/072206-2040225e.json
+    > ```
+    >
+    > Each key is the date, the UTC time `HHMMSS`, and a random suffix. Your test event is the object written at the time you ran step 20 (about **150 bytes**). A ~115-byte object is the 2-minute heartbeat, and a ~1900-byte object is the alarm event.
 
-22. **Read** your test event from each bucket. This block reads the five newest objects in each sink and prints only the ones your step 20 test produced, so you do not have to copy keys by hand:
+22. **Read** your test event from the NewRelic sink. Copy the key of your test object from step 21 (everything from `incidents/` to `.json`) and paste it in place of `<key>`:
 
     ```bash
-    for B in "$SINK_NR" "$SINK_SW"; do
-      echo "== $B"
-      for K in $(aws s3api list-objects-v2 --bucket "$B" --prefix incidents/ \
-          --query 'reverse(sort_by(Contents,&LastModified))[:5].Key' --output text); do
-        aws s3 cp "s3://$B/$K" - | jq -c 'select(.event.source == "lab3-manual-test")'
-      done
-    done
+    aws s3 cp "s3://$SINK_NR/<key>" -
     ```
 
-    > **Expected Result:** One JSON line under each bucket name, the same event in both, differing only in `destination` and `forwarded_at`:
+    > **Expected Result:** One line of JSON with `"destination": "newrelic"` and your test event inside `event`:
     >
     > ```
-    > == io108-user01-sink-newrelic-xxxxxx
-    > {"destination":"newrelic","forwarded_at":"2026-11-26T07:21:44.494604+00:00","event":{"source":"lab3-manual-test","incident":"report-pipeline"}}
-    > == io108-user01-sink-solarwinds-xxxxxx
-    > {"destination":"solarwinds","forwarded_at":"2026-11-26T07:21:44.494604+00:00","event":{"source":"lab3-manual-test","incident":"report-pipeline"}}
+    > {"destination": "newrelic", "forwarded_at": "2026-11-26T07:21:44.494604+00:00", "event": {"source": "lab3-manual-test", "incident": "report-pipeline"}}
     > ```
     >
-    > If a bucket shows no line, the event has not arrived yet or more than five newer objects landed since: wait 15 seconds and run the block again, or re-run step 20. If you see `None` errors, `$SINK_NR` / `$SINK_SW` are blank: run steps 1 and 5 again.
+    > If `event` shows `"source": "heartbeat"`, you picked the heartbeat object: use the key just above it. `404 Not Found` means the key was mistyped, or came from the other bucket.
 
-23. **Confirm** on the board. Go back to your **`io108-<your-id>-incident-board`** tab and click the refresh icon.
+23. **List** the SolarWinds sink:
+
+    ```bash
+    aws s3 ls "s3://$SINK_SW/" --recursive | tail -3
+    ```
+
+    > **Expected Result:** The same pattern as step 21. The keys are **different** from the NewRelic ones: each copy of the event gets its own random suffix, so always take the key from this bucket's own listing.
+
+24. **Read** your test event from the SolarWinds sink. Copy the key of your test object from step 23 and paste it in place of `<key>`:
+
+    ```bash
+    aws s3 cp "s3://$SINK_SW/<key>" -
+    ```
+
+    > **Expected Result:** The same event as step 22, with `"destination": "solarwinds"`. One event, delivered to both destinations: that is the fan-out.
+
+25. **Confirm** on the board. Go back to your **`io108-<your-id>-incident-board`** tab and click the refresh icon.
 
     > **Expected Result:** **Sink: NewRelic (fan-out)** and **Sink: SolarWinds (fan-out)** are **green**, so all three Lab 3 tiles are green.
 
-24. **Close** the incident in your incident notes: P2, start time (step 7), root cause (reserved concurrency = 0 throttling the report Lambda), remediation (removed the reserved-concurrency cap), and recovery time (step 19).
+26. **Close** the incident in your incident notes: P2, start time (step 7), root cause (reserved concurrency = 0 throttling the report Lambda), remediation (removed the reserved-concurrency cap), and recovery time (step 19).
 
     > **Expected Result:** Your notes hold all five items. You will use them in the Lab 5 post-incident report.
 
