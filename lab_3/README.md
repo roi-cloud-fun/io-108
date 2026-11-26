@@ -8,8 +8,8 @@
 | **Difficulty** | Intermediate |
 | **Severity (this incident)** | **P2** - degraded reporting, no customer-facing outage |
 | **Incident platform** | ServiceNow (log the incident, attach your timeline, set Priority = P2) |
-| **Prerequisites** | Labs 1-2 completed; AWS CLI v2, `kubectl`, `jq` configured for the training account; access to your `io108-<id>-incident-board` CloudWatch dashboard |
-| **Builds On** | The single connected application stack you deployed in Lab 0 (EKS orders-api -> Aurora -> Lambda/Step Functions reporting). The rogue instance from the security through-line is still present and its tiles (`aurora_no_rogue`, `rogue_contained`) stay red until Lab 4/the capstone. |
+| **Prerequisites** | Labs 1-2 completed, including Lab 1 **Start Here** on your lab host (it saves `SID`/`REGION` and connects Terraform). Every command runs on the lab host as `ec2-user`. Access to your `io108-<your-id>-incident-board` CloudWatch dashboard |
+| **Builds On** | The single connected application stack you deployed in Lab 0 (EKS orders-api -> Aurora -> Lambda/Step Functions reporting). The rogue instance from the security through-line is left exactly as you left it in Lab 1: if you contained it, `Rogue contained` and `Aurora: no rogue sessions` stay green through this lab; if not, they stay red. Lab 4 starts the rogue again. |
 
 ---
 
@@ -52,42 +52,71 @@ By the end of this lab, you will be able to:
 
 ## Pre-Lab Setup
 
-Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive synced folder.
+Run everything in this lab on your **lab host** as **`ec2-user`**: connect with Session Manager, then run `sudo su - ec2-user` (Lab 1 Start Here, steps 1–2). Your id and region come from `terraform.tfvars` and `~/.bashrc`, both set in Lab 1 Start Here.
 
-1. **Materialize this lab's incident.** From the lab environment directory, apply the `lab3` scenario (replace `user01` with your assigned student id):
+1. **Materialize this lab's incident.** Apply the `lab3` scenario:
 
     ```bash
-    cd lab_environment/lab_env_student
-    terraform plan  -var scenario=lab3                       # student_id + region from terraform.tfvars (Lab 0)
-    terraform apply -var scenario=lab3 -auto-approve
+    cd ~/io-108/lab_environment/lab_env_student
+    terraform apply -var scenario=lab3
     ```
 <!-- source: course_outline_v3.md §"using Terraform and verify its health" -->
 
-2. **Redeploy the app** so it picks up the scenario wiring:
+    Terraform takes about a minute to compare your stack with the code, then prints a **plan** and stops at a confirmation prompt:
+
+    ```
+    Plan: 0 to add, 2 to change, 0 to destroy.
+
+    Do you want to perform these actions?
+      Terraform will perform the actions described above.
+      Only 'yes' will be accepted to approve.
+
+      Enter a value:
+    ```
+
+    **Check the plan first.** It should be small: about **2–3 to change, 0–1 to add or destroy**. The changes listed above the `Plan:` line are `aws_lambda_function.report_generator` (its reserved concurrency set to `0`) and `aws_cloudwatch_dashboard.incident_board` (the board's scenario label). You may also see `aws_ec2_instance_state.rogue[0]` destroyed (this only drops Terraform's record of the rogue's run state; the rogue stays as you left it) or the node group if you changed it outside Lab 2's steps.
+
+    - **If it matches,** type **`yes`** and press **Enter**. Terraform will not continue until you do, and anything other than `yes` cancels.
+    - **If it wants to add dozens or 100+ resources,** type **`no`** and press **Enter**, then tell your instructor. Terraform cannot see your stack, and `yes` would build a second copy of it.
+
+    > **Expected Result:** Within about a minute, Terraform prints **`Apply complete! Resources: 0 added, 2 changed, 0 destroyed.`** (your numbers may differ by one, as above) followed by a list of outputs, and you are back at the `$` prompt.
+
+2. **Redeploy the app.** This re-installs the app from its Helm chart (the package that installs it on the cluster) and removes Lab 2's NetworkPolicies, including the `orders-allow-egress` policy you added, so the cluster starts this lab clean:
 
     ```bash
     ./deploy_app.sh
     ```
 <!-- source: course_outline_v3.md §"Deploy a multi-service AWS application stack" -->
 
-3. **Capture the outputs** every task below reads. Paste this block verbatim:
+    > **Expected Result:** After about 1–2 minutes the script prints `netpol default-deny: false` near the top, then `deployment "orders-api" successfully rolled out`, and ends with **`Deploy complete.`** If it prints `WARNING: orders-api is not Ready`, wait 2 minutes and run `kubectl -n orders get pods`; the `orders-api-...` pods should show `1/1   Running`.
+
+3. **Re-establish** your shell variables. Every task below reads them. Run this now, and again after any reconnect. `SID` and `REGION` already come from `~/.bashrc` (Lab 1 Start Here step 3), so do **not** re-export them:
 
     ```bash
-    export REGION=$(terraform output -raw region)
-    export STUDENT_ID=$(terraform output -raw student_id)
+    cd ~/io-108/lab_environment/lab_env_student
+    echo "SID=$SID REGION=$REGION"
     export DASHBOARD=$(terraform output -raw incident_board_dashboard_name)
     export SFN_ARN=$(terraform output -raw sfn_state_machine_arn)
+    export FANOUT_SFN=$(terraform output -raw fanout_state_machine_arn)
     export REPORTS_BUCKET=$(terraform output -raw reports_bucket)
-    export REPORT_FN="io108-${STUDENT_ID}-report-generator"
+    export REPORT_FN="io108-${SID}-report-generator"
     export SINK_NR=$(terraform output -json sink_buckets | jq -r .newrelic)
     export SINK_SW=$(terraform output -json sink_buckets | jq -r .solarwinds)
     export FANOUT_ALARM=$(terraform output -raw fanout_trigger_alarm_name)
     echo "Dashboard:   $DASHBOARD"
     echo "Report fn:   $REPORT_FN"
     echo "Report SFN:  $SFN_ARN"
+    echo "Fan-out SFN: $FANOUT_SFN"
+    echo "Reports:     $REPORTS_BUCKET"
+    echo "Sinks:       $SINK_NR  $SINK_SW"
+    echo "Alarm:       $FANOUT_ALARM"
     ```
 
-> **Expect a wait:** `reports_flowing` turns red once the newest report is over 10 minutes old, so allow **about 10 minutes** after the apply. Executions start failing at the next 5-minute schedule.
+    **Verify** every line shows a value. The first must show your own id and region, for example `SID=user01 REGION=us-east-1` (not blank, not `userNN`); if it is blank, run `source ~/.bashrc` and re-run the block, and if it is still wrong, redo Lab 1 Start Here step 3. The rest should look like `Dashboard:   io108-user01-incident-board`, `Report fn:   io108-user01-report-generator`, and `arn:aws:states:...` ARNs. If any value is blank, or you see `No outputs found`, Terraform is not connected to your stack: redo Lab 1 Start Here steps 4–5.
+
+> **Reconnecting later?** A new session forgets every shell variable except `SID` and `REGION`. Start a new session, run `sudo su - ec2-user`, then re-run step 3. Nothing else needs repeating.
+
+> **Expect a wait:** `reports_flowing` turns red once the newest report is over 10 minutes old, so allow **about 10 minutes** after the apply. Executions start failing at the next 5-minute schedule, so you can start Task 2 after about 5 minutes while the tile catches up.
 
 > **Note:** The metrics-based tiles read CloudWatch data published every minute. After you apply a fix, allow **1-2 minutes** for a probe cycle before a tile flips color.
 
@@ -95,7 +124,7 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
 
 ## Task 1: Read the Incident Board
 
-1. **Open** the CloudWatch console and navigate to **Dashboards**. Open the dashboard named in `$DASHBOARD` (it is `io108-<your-id>-incident-board`).
+1. **Open** your incident board. In the AWS console search bar, type **CloudWatch** and open it. Check that the region selector at the top right matches your `REGION`. In the left menu choose **Dashboards**, then open **`io108-<your-id>-incident-board`** (for example `io108-user01-incident-board`; it is the name `echo` printed as `Dashboard:` in Pre-Lab step 3). Click the refresh icon (circular arrow) at the top right if the tiles look stale.
 
 2. **Find** the **Lab 3** band. You should see three tiles:
 
@@ -111,9 +140,9 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
 
 ## Task 2: Diagnose with Step Functions Execution History
 
-3. **Open** the Step Functions console and select the state machine `io108-<your-id>-report-workflow` (ARN in `$SFN_ARN`).
+3. **Open** the state machine. In the AWS console search bar, type **Step Functions** and open it, and check that the region at the top right matches your `REGION`. In the left menu choose **State machines**, then click **`io108-<your-id>-report-workflow`** (for example `io108-user01-report-workflow`).
 
-4. **Open** the most recent execution. You will see the `GenerateReport` task **fail**, retry on its `Retry` policy, fail again, and the execution route into the `ReportFailed` state. From the CLI:
+4. **Open** the most recent execution: on the **Executions** tab, click the top execution whose **Status** is **Failed**. In the **Graph view** you will see the `GenerateReport` task **fail**, retry on its `Retry` policy (two more attempts), fail again, and the execution route into the `ReportFailed` state. From the CLI:
 
     ```bash
     aws stepfunctions list-executions --state-machine-arn "$SFN_ARN" \
@@ -122,7 +151,7 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
     ```
     <!-- source: Module_3_narrative.md §"A FAILED execution shows you the exact state that failed" -->
 
-    Expected: the latest executions show `FAILED`.
+    Expected: a small table whose newest rows (top) show `FAILED`; older rows from before the incident may show `SUCCEEDED`. If every row is `SUCCEEDED`, the schedule has not fired since the apply: wait 5 minutes and re-run.
 
 5. **Inspect** the failing task's cause. In the execution graph, click the **GenerateReport** step and read the event detail, or pull it from the CLI:
 
@@ -130,12 +159,15 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
     EXEC_ARN=$(aws stepfunctions list-executions --state-machine-arn "$SFN_ARN" \
       --region "$REGION" --status-filter FAILED --max-results 1 \
       --query 'executions[0].executionArn' --output text)
+    echo "EXEC_ARN=$EXEC_ARN"
     aws stepfunctions get-execution-history --execution-arn "$EXEC_ARN" \
       --region "$REGION" --reverse-order --max-results 20 \
-      --query "events[?type=='LambdaFunctionScheduleFailed' || type=='TaskFailed'].[type,taskFailedEventDetails.cause]" \
+      --query "events[?type=='TaskFailed'].[taskFailedEventDetails.error,taskFailedEventDetails.cause]" \
       --output text
     ```
     <!-- source: Module_3_narrative.md §"Open the failed execution and read the history" -->
+
+    **Verify** `echo` shows an `arn:aws:states:...:execution:...` value; if it shows `EXEC_ARN=None`, no execution has failed yet (see step 4). The history prints three similar lines (the first try plus two retries), each starting with **`Lambda.TooManyRequestsException`** followed by a cause such as `Rate Exceeded. (Service: Lambda, Status Code: 429, ...)`.
 
     You are looking for a cause that mentions throttling / `TooManyRequestsException` / `Rate Exceeded`, not an application stack trace. **That distinction is the whole diagnosis:** the workflow is wired correctly and the Lambda code is fine — the function is being *throttled before it runs*.
 
@@ -145,7 +177,7 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
 
 ## Task 3: Confirm Throttling in Lambda Metrics
 
-6. **Open** the Lambda console, select function `$REPORT_FN`, and go to the **Monitor** tab. Compare two metrics over the last hour:
+6. **Open** the function's metrics. In the AWS console search bar, type **Lambda** and open it (same region). Choose **Functions**, click **`io108-<your-id>-report-generator`** (the name `echo` printed as `Report fn:`), and go to the **Monitor** tab. Compare two graphs over the last hour:
 
     - **Throttles** — elevated (every invocation is being throttled).
     - **Errors** — flat or zero (the code never ran, so it never errored).
@@ -161,6 +193,8 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
     ```
 <!-- source: Module_3_narrative.md §"The Throttles metric in CloudWatch counts these exactly" -->
 
+    Expected: a table with one row per 5-minute period since the incident started, each with a `Sum` of about `3.0` (one scheduled run = three throttled attempts). An empty table means no run has been throttled yet: wait 5 minutes and re-run.
+
 7. **Check** the function's concurrency configuration — this is the root cause:
 
     ```bash
@@ -168,7 +202,15 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
     ```
     <!-- source: Lab_3_narrative.md §"aws lambda get-function-concurrency" -->
 
-    Expected: `"ReservedConcurrentExecutions": 0`. A reserved concurrency of **0** means the function is allowed **zero** simultaneous executions — so AWS throttles every single invocation.
+    Expected:
+
+    ```
+    {
+        "ReservedConcurrentExecutions": 0
+    }
+    ```
+
+    A reserved concurrency of **0** means the function is allowed **zero** simultaneous executions — so AWS throttles every single invocation.
 
 > **Throttles vs. Errors — the takeaway:** **Throttles** mean the platform refused to run your function (capacity/quota). **Errors** mean your function ran and failed (bug, exception, timeout). They live in different metrics and point at completely different fixes. Misreading one for the other sends responders down the wrong path.
 
@@ -184,6 +226,16 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
     ```
     <!-- source: Lab_3_narrative.md §"aws lambda put-function-concurrency" -->
 
+    This command prints **nothing** when it succeeds; you are simply returned to the `$` prompt. Verify the cap is gone:
+
+    ```bash
+    aws lambda get-function-concurrency --function-name "$REPORT_FN" --region "$REGION"
+    ```
+
+    > **Expected Result:** `{}` (an empty result: no reserved concurrency any more). If it still shows `"ReservedConcurrentExecutions": 0`, re-run the `delete-function-concurrency` command and check it for an error.
+
+    > **Do not re-apply `scenario=lab3`.** The fault lives in Terraform, so running `terraform apply -var scenario=lab3` again would pin concurrency back to `0`. Your CLI fix holds for the rest of this lab.
+
     > **Why remove rather than reserve a small number?** You *could* instead set a small
     > positive reserve with `aws lambda put-function-concurrency --reserved-concurrent-executions
     > N`. But reserving N requires the account to have at least `N + 10` unreserved concurrency
@@ -198,18 +250,25 @@ Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive syn
 9. **Trigger** a fresh run rather than waiting for the next schedule:
 
     ```bash
-    aws stepfunctions start-execution --state-machine-arn "$SFN_ARN" --region "$REGION"
+    RUN_ARN=$(aws stepfunctions start-execution --state-machine-arn "$SFN_ARN" \
+      --region "$REGION" --query executionArn --output text)
+    echo "RUN_ARN=$RUN_ARN"
     ```
 <!-- source: Module_3_narrative.md §"Step Functions state machine driven by EventBridge" -->
 
-10. **Confirm** the execution now succeeds and a fresh report lands in S3:
+    `echo` prints the new execution's ARN (`arn:aws:states:...:execution:io108-<your-id>-report-workflow:...`). If it is blank, read the error above it.
+
+10. **Confirm** the execution now succeeds and a fresh report lands in S3. The function needs about 30 seconds to start and run, so wait half a minute, then:
 
     ```bash
+    aws stepfunctions describe-execution --execution-arn "$RUN_ARN" \
+      --region "$REGION" --query status --output text
+    date -u
     aws s3 ls "s3://$REPORTS_BUCKET/reports/" --recursive | tail -5
     ```
     <!-- source: course_outline_v3.md §"report landing in S3" -->
 
-    Expected: a new object with a recent timestamp.
+    Expected: the status line reads **`SUCCEEDED`** (if it reads `RUNNING`, wait 30 seconds and re-run the block). The last line of the listing is a new object named `reports/<date>T<HH-MM-SS>Z.json` whose time is within a minute or two of the `date -u` line (both are UTC). If the status is `FAILED`, see Troubleshooting.
 
 > **Expected Result:** Within 1-2 minutes the **Reports flowing** (`reports_flowing`) tile on your incident board turns **GREEN**. Capture the recovery time for your timeline.
 
@@ -237,25 +296,33 @@ A **Step Functions Parallel** state sends the *same input* to every branch simul
 
 > **Note on simulated destinations:** The two S3 buckets (`$SINK_NR`, `$SINK_SW`) *represent* NewRelic and SolarWinds. In SYF's environment these are the real NewRelic and SolarWinds ingestion endpoints; here we land the event in S3 so you can inspect it directly without a third-party integration.
 
-11. **Trigger** a fan-out and verify the same event reached both sinks. Start the fan-out state machine directly:
+11. **Trigger** a fan-out and verify the same event reached both sinks. Start the fan-out state machine directly (`$FANOUT_SFN` was set in Pre-Lab step 3):
 
     ```bash
-    export FANOUT_SFN=$(terraform output -raw fanout_state_machine_arn)
     aws stepfunctions start-execution --state-machine-arn "$FANOUT_SFN" \
       --input '{"source":"lab3-manual-test","incident":"report-pipeline"}' --region "$REGION"
     ```
 <!-- source: Module_2_narrative.md §"hands the same event to several branches at once" -->
 
-12. **Confirm** a fresh object appeared in **both** sink buckets:
+    Expected: a short JSON block with an `executionArn` and a `startDate`. If you see `Invalid Arn` or `ParameterValidationError`, `$FANOUT_SFN` is blank: re-run Pre-Lab step 3.
+
+12. **Confirm** a fresh object appeared in **both** sink buckets. Wait about 15 seconds (the forwarder Lambda reads from the queues), then:
 
     ```bash
     echo "== NewRelic sink ==";  aws s3 ls "s3://$SINK_NR/"  --recursive | tail -3
     echo "== SolarWinds sink =="; aws s3 ls "s3://$SINK_SW/" --recursive | tail -3
     ```
 
-    Expected: both buckets received a new object at the same time — the single fan-out execution reached both monitoring endpoints.
+    Each line ends with a key like `incidents/2026/11/25/143205-a1b2c3d4.json` (date, then the UTC time `HHMMSS`, then a random suffix). The heartbeat also writes a pair every 2 minutes, so to find **your** event, read the newest object in each bucket. Replace `<key>` with the last key from each listing:
 
-> **Expected Result:** Both `sink_newrelic` and `sink_solarwinds` tiles remain **green**, and you can see a matching pair of fresh objects in the two buckets. You have proven the platform delivers one incident event to multiple tools.
+    ```bash
+    aws s3 cp "s3://$SINK_NR/<key>" -
+    aws s3 cp "s3://$SINK_SW/<key>" -
+    ```
+
+    Expected: each prints one line of JSON. The `destination` is `newrelic` in one and `solarwinds` in the other, and **both** contain `"source": "lab3-manual-test"`. If you see `"source": "heartbeat"` instead, that is the 2-minute heartbeat and your test landed in an earlier key: try the second-to-last key, or re-run step 11.
+
+> **Expected Result:** Both `sink_newrelic` and `sink_solarwinds` tiles remain **green**, and the two buckets each hold an object, written within the same second or two, carrying your `lab3-manual-test` event. You have proven the platform delivers one incident event to multiple tools.
 
 > **What Just Happened?** This is how AWS distributes a single observability event to a whole monitoring estate. The Parallel state is the fan-out primitive; SQS gives each destination its own buffered, retryable queue; the forwarder Lambda does any per-tool transformation. Add a third tool tomorrow and you add one branch and one queue — the source event does not change.
 
@@ -265,17 +332,21 @@ A **Step Functions Parallel** state sends the *same input* to every branch simul
 
 ### The `reports_flowing` tile stays red after the fix
 
-**Check:** Confirm `aws lambda get-function-concurrency` no longer returns `0`. Then confirm the most recent Step Functions execution is `SUCCEEDED` and a report object newer than your fix time exists in S3.
+**Check:** Confirm `aws lambda get-function-concurrency --function-name "$REPORT_FN" --region "$REGION"` now returns `{}`, not `"ReservedConcurrentExecutions": 0`. (Still `0`? You may have re-run `terraform apply -var scenario=lab3`, which re-injects the fault: repeat step 8.) Then confirm the most recent Step Functions execution is `SUCCEEDED` and a report object newer than your fix time exists in S3.
 
 **Fix:** If concurrency is correct but executions still fail, read the new failure cause — it should now be an application/DB error, not a throttle, which is a different problem. Give the dashboard 1-2 minutes; the probe only runs once a minute.
 
 ### Step Functions execution shows no failures at all
 
-**Check:** You may be looking at executions from before the incident, or the schedule has not fired since you applied `lab3`. Start one manually with `aws stepfunctions start-execution`.
+**Check:** You may be looking at executions from before the incident, or the schedule has not fired since you applied `lab3`. Wait 5 minutes for the next scheduled run, or start one manually: `aws stepfunctions start-execution --state-machine-arn "$SFN_ARN" --region "$REGION"`.
+
+### A command prints an empty value, `Invalid Arn`, or `No outputs found`
+
+**Fix:** Your session lost its variables (for example after a reconnect). Run `sudo su - ec2-user` if your prompt is not `ec2-user`, then re-run Pre-Lab step 3.
 
 ### A sink tile is red
 
-**Check:** List the bucket for a recent object. The heartbeat fans out every 2 minutes, so a sink should never be stale for long. If a sink is red, confirm the forwarder Lambda (`io108-<id>-fanout-forwarder`) has no errors in its CloudWatch logs.
+**Check:** List the bucket for a recent object. The heartbeat fans out every 2 minutes, so a sink should never be stale for long. If a sink is red, confirm the forwarder Lambda (`io108-<your-id>-fanout-forwarder`) has no errors in its CloudWatch logs.
 
 ---
 
@@ -308,6 +379,16 @@ A **Step Functions Parallel** state sends the *same input* to every branch simul
 - You traced the **event fan-out** (CloudWatch Alarm -> EventBridge -> Step Functions Parallel -> SQS x N -> forwarder Lambda -> S3 sinks) and verified one event reaching two monitoring endpoints.
 
 **Before you move on:** In **ServiceNow**, record this as a **P2** incident — title, start time (tile went red), root cause (reserved concurrency = 0 throttling the report Lambda), remediation (removed the reserved-concurrency cap), and recovery time (tile went green). You will assemble several of these into a full post-incident report in the Lab 5 capstone.
+
+## Completion Checklist
+
+- [ ] `lab3` applied (`Apply complete!`), app redeployed (`Deploy complete.`), all Pre-Lab step 3 variables show values
+- [ ] `reports_flowing` confirmed red; both `sink_*` tiles green
+- [ ] Failed execution found; `TaskFailed` cause reads `Lambda.TooManyRequestsException`
+- [ ] Throttles non-zero, Errors flat; `get-function-concurrency` showed `"ReservedConcurrentExecutions": 0`
+- [ ] Concurrency cap removed (`get-function-concurrency` returns `{}`); manual run `SUCCEEDED`; fresh report in S3; `reports_flowing` green
+- [ ] Fan-out triggered; `lab3-manual-test` event read from **both** sink buckets
+- [ ] Incident recorded in ServiceNow (P2, start time, root cause, remediation, recovery time)
 
 ## Next Steps
 
