@@ -104,6 +104,7 @@ Run everything in this lab on your **lab host** as **`ec2-user`**: connect with 
 5. **Capture** the values this lab uses into shell variables. Every task below reads them. **After any reconnect, run steps 1 and 5 again**, because a new session forgets these variables. `SID` and `REGION` already come from `~/.bashrc` (Lab 1 Start Here step 3), so do **not** re-export them:
 
     ```bash
+    cd ~/io-108/lab_environment/lab_env_student
     echo "SID=$SID REGION=$REGION"
     export DASHBOARD=$(terraform output -raw incident_board_dashboard_name)
     export SFN_ARN=$(terraform output -raw sfn_state_machine_arn)

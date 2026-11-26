@@ -103,6 +103,7 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
 5. **Capture** the values this lab uses into shell variables. **After any reconnect, run steps 1 and 5 again**, because a new session forgets these variables:
 
     ```bash
+    cd ~/io-108/lab_environment/lab_env_student
     export CLUSTER=$(terraform output -raw cluster_name)
     echo "CLUSTER=$CLUSTER"
     aws eks update-kubeconfig --name "$CLUSTER" --region $REGION
