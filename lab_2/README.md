@@ -56,14 +56,24 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
 
     The `echo` must show your own id and region, for example `SID=user01 REGION=us-east-1` (not blank, not `userNN`). If it is blank, run `source ~/.bashrc` and run this block again; if it is still wrong, redo Lab 1 Start Here step 3.
 
-2. **Inject** this lab's incident with Terraform. Run this command on its own:
+2. **Preview** the incident. This command changes nothing; it only shows what the apply will do. Run it on its own:
+
+    ```bash
+    terraform plan -var scenario=lab2
+    ```
+
+    It takes about a minute and ends with a `Plan:` line. **Check it.** It should be small: about **`Plan: 0 to add, 2 to change, 1 to destroy.`** (2–3 to change, 0–1 to add or destroy). The resources listed above the `Plan:` line are `aws_eks_node_group.main` (scaled to zero), `aws_cloudwatch_dashboard.incident_board` (the board's scenario label), possibly the orders-api IAM policy you repaired in Lab 1, and `aws_ec2_instance_state.rogue[0]` destroyed (this only drops Terraform's record of the rogue's run state; the rogue stays as you left it).
+
+    If it wants to add dozens or 100+ resources, **stop** and tell your instructor; do not run step 3. Terraform cannot see your stack.
+
+3. **Inject** this lab's incident. Run this command on its own:
 
     ```bash
     terraform apply -var scenario=lab2
     ```
 <!-- source: course_outline_v3.md §"Lab 2: EKS Pod Failure Investigation" -->
 
-    Terraform takes about a minute to compare your stack with the code, then prints a **plan** and stops at a confirmation prompt:
+    Terraform prints the same plan again and stops at a confirmation prompt:
 
     ```
     Plan: 0 to add, 2 to change, 1 to destroy.
@@ -75,14 +85,12 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
       Enter a value:
     ```
 
-    **Check the plan first.** It should be small: about **2–3 to change, 0–1 to add or destroy**. The resources listed above the `Plan:` line are `aws_eks_node_group.main` (scaled to zero), `aws_cloudwatch_dashboard.incident_board` (the board's scenario label), possibly the orders-api IAM policy you repaired in Lab 1, and `aws_ec2_instance_state.rogue[0]` destroyed (this only drops Terraform's record of the rogue's run state; the rogue stays as you left it).
-
-    - **If it matches,** type **`yes`** and press **Enter**. Terraform will not continue until you do, and anything other than `yes` cancels.
-    - **If it wants to add dozens or 100+ resources,** type **`no`** and press **Enter**, then tell your instructor. Terraform cannot see your stack, and `yes` would build a second copy of it.
+    - **If the `Plan:` line matches your preview in step 2,** type **`yes`** and press **Enter**. Terraform will not continue until you do, and anything other than `yes` cancels.
+    - **If it differs,** type **`no`** and press **Enter**, then tell your instructor.
 
     > **Expected Result:** After a few minutes (the node group has to scale down), Terraform prints **`Apply complete! Resources: 0 added, 2 changed, 1 destroyed.`** (your numbers may differ by one, as above) followed by a list of outputs, and you are back at the `$` prompt.
 
-3. **Redeploy** the application, so the Helm chart (the package that installs the app on the cluster) applies the default-deny egress NetworkPolicy. Terraform alone does not apply it. Run this only after step 2 has finished:
+4. **Redeploy** the application, so the Helm chart (the package that installs the app on the cluster) applies the default-deny egress NetworkPolicy. Terraform alone does not apply it. Run this only after step 3 has finished:
 
     ```bash
     ./deploy_app.sh
@@ -92,7 +100,7 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
 
     > **Expected Result:** The script ends with `WARNING: orders-api is not Ready. For scenario='lab2' this may be EXPECTED (the injected fault).` and then **`Deploy complete.`** That warning is the incident, not an error in the script. (If the old nodes were still draining, the rollout may finish instead; that is also fine.)
 
-4. **Capture** the values this lab uses into shell variables. **After any reconnect, run steps 1 and 4 again**, because a new session forgets these variables:
+5. **Capture** the values this lab uses into shell variables. **After any reconnect, run steps 1 and 5 again**, because a new session forgets these variables:
 
     ```bash
     export CLUSTER=$(terraform output -raw cluster_name)
@@ -105,13 +113,13 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
 
 On the board, `EKS pods schedulable` goes red within about two minutes of the apply. `Pod → internet` and `Pod → DNS` follow in about 5–8 minutes; they turn red on missing data.
 
-> **Reconnecting later?** Start a new session, run `sudo su - ec2-user`, then run **steps 1 and 4** again. If you were in the middle of Task 3, also re-run the `POD=` line in step 7.
+> **Reconnecting later?** Start a new session, run `sudo su - ec2-user`, then run **steps 1 and 5** again. If you were in the middle of Task 3, also re-run the `POD=` line in step 8.
 
 ---
 
 ## Task 2: Triage from the Board
 
-5. **Open** your incident board. In the AWS console search bar, type **CloudWatch** and open it. Check that the region selector at the top right matches your `REGION`. In the left menu choose **Dashboards**, then open **`io108-<your-id>-incident-board`** (for example `io108-user01-incident-board`). Confirm the Lab 2 band: **`EKS pods schedulable`** is red, and **`Pod → internet`** and **`Pod → DNS`** are red. The last two stop publishing once pod egress is cut, so they go red on missing data. Click the refresh icon (circular arrow) at the top right if the tiles look stale.
+6. **Open** your incident board. In the AWS console search bar, type **CloudWatch** and open it. Check that the region selector at the top right matches your `REGION`. In the left menu choose **Dashboards**, then open **`io108-<your-id>-incident-board`** (for example `io108-user01-incident-board`). Confirm the Lab 2 band: **`EKS pods schedulable`** is red, and **`Pod → internet`** and **`Pod → DNS`** are red. The last two stop publishing once pod egress is cut, so they go red on missing data. Click the refresh icon (circular arrow) at the top right if the tiles look stale.
 
 > **Expected Result:** Three red tiles in the Lab 2 band. Record the incident as P2 in your incident notes (in production you would open it in ServiceNow).
 
@@ -119,7 +127,7 @@ On the board, `EKS pods schedulable` goes red within about two minutes of the ap
 
 ## Task 3: Read the Pod Status and the Scheduler's Reason
 
-6. **List** the pods in the `orders` namespace:
+7. **List** the pods in the `orders` namespace:
 
     ```bash
     kubectl -n orders get pods
@@ -136,9 +144,9 @@ On the board, `EKS pods schedulable` goes red within about two minutes of the ap
     orders-worker-5f8b9c6d7-k2lmn    0/1     Pending   0          3m
     ```
 
-    The `orders-api-...` and `orders-worker-...` pods are in **`Pending`**. (`orders-conncheck-...` pods belong to the connectivity checker, a job that runs every minute; you will meet it in Task 6.) Importantly, they are not `CrashLoopBackOff` or `ImagePullBackOff`. `Pending` means the scheduler has not been able to place the pod on a node at all. The distinction matters: `Pending` is a *placement* problem, not an *application* problem. (Pods still `Running`? The nodes have not started draining yet: wait 1–2 minutes before step 7, and do not move on to the fix.)
+    The `orders-api-...` and `orders-worker-...` pods are in **`Pending`**. (`orders-conncheck-...` pods belong to the connectivity checker, a job that runs every minute; you will meet it in Task 6.) Importantly, they are not `CrashLoopBackOff` or `ImagePullBackOff`. `Pending` means the scheduler has not been able to place the pod on a node at all. The distinction matters: `Pending` is a *placement* problem, not an *application* problem. (Pods still `Running`? The nodes have not started draining yet: wait 1–2 minutes before step 8, and do not move on to the fix.)
 
-7. **Describe** a Pending pod and read its **Events** — the scheduler writes the reason there:
+8. **Describe** a Pending pod and read its **Events** — the scheduler writes the reason there:
 
     ```bash
     POD=$(kubectl -n orders get pods -l app=orders-api --field-selector=status.phase=Pending -o jsonpath='{.items[0].metadata.name}')
@@ -149,7 +157,7 @@ On the board, `EKS pods schedulable` goes red within about two minutes of the ap
 
     **Verify** `echo` prints a pod name such as `POD=orders-api-6d9c7b8f5d-4xkqz`. If it prints `POD=` with nothing after it (and the next command fails with `resource name may not be empty`), no pod is `Pending` yet: wait 1–2 minutes and re-run this block.
 
-8. **Find** the `FailedScheduling` event. It reads along the lines of:
+9. **Find** the `FailedScheduling` event. It reads along the lines of:
 
     ```
     Warning  FailedScheduling  default-scheduler
@@ -168,7 +176,7 @@ On the board, `EKS pods schedulable` goes red within about two minutes of the ap
 
 ## Task 4: Confirm It Is a Node-Group Capacity Problem
 
-9. **Check** the nodes the cluster can see:
+10. **Check** the nodes the cluster can see:
 
     ```bash
     kubectl get nodes
@@ -177,7 +185,7 @@ On the board, `EKS pods schedulable` goes red within about two minutes of the ap
 
     Expect **`No resources found`** — there are no worker nodes registered. (Nodes still draining show `Ready,SchedulingDisabled` for up to ~15 minutes; that already means no capacity, so you can continue.)
 
-10. **Confirm** at the source: inspect the managed node group's scaling configuration via the EKS API:
+11. **Confirm** at the source: inspect the managed node group's scaling configuration via the EKS API:
 
     ```bash
     aws eks describe-nodegroup \
@@ -198,9 +206,9 @@ On the board, `EKS pods schedulable` goes red within about two minutes of the ap
     }
     ```
 
-    The healthy baseline is `minSize: 2, desiredSize: 2, maxSize: 3`. Here **`desiredSize` is `0`** (and `minSize` is `0`): the node group has been scaled to zero, so the cluster has no capacity and every pod stays `Pending`. If you get `ResourceNotFoundException`, `SID` or `REGION` is wrong: re-run step 4.
+    The healthy baseline is `minSize: 2, desiredSize: 2, maxSize: 3`. Here **`desiredSize` is `0`** (and `minSize` is `0`): the node group has been scaled to zero, so the cluster has no capacity and every pod stays `Pending`. If you get `ResourceNotFoundException`, `SID` or `REGION` is wrong: re-run step 5.
 
-11. **Cross-check** in **Container Insights** (the CloudWatch metrics for your cluster). In the CloudWatch console, choose **Dashboards** and open **`io108-<your-id>-incident-dashboard`** (the graphs dashboard, not the incident board). On the **EKS Node CPU (Container Insights)** graph, the line stops and shows no data from the time the nodes left, corroborating that capacity — not the application — is the issue.
+12. **Cross-check** in **Container Insights** (the CloudWatch metrics for your cluster). In the CloudWatch console, choose **Dashboards** and open **`io108-<your-id>-incident-dashboard`** (the graphs dashboard, not the incident board). On the **EKS Node CPU (Container Insights)** graph, the line stops and shows no data from the time the nodes left, corroborating that capacity — not the application — is the issue.
 
 > **Expected Result:** You can state the root cause precisely: the managed node group `io108-<your-id>-nodes` has `desiredSize=0`, so there is nowhere to schedule the workload. Capacity in EKS comes from the node group (or Fargate profiles); the scheduler can only place pods on nodes that actually exist.
 
@@ -208,7 +216,7 @@ On the board, `EKS pods schedulable` goes red within about two minutes of the ap
 
 ## Task 5: Restore Node Capacity and Confirm Green
 
-12. **Scale** the node group back to the healthy configuration:
+13. **Scale** the node group back to the healthy configuration:
 
     ```bash
     aws eks update-nodegroup-config \
@@ -221,7 +229,7 @@ On the board, `EKS pods schedulable` goes red within about two minutes of the ap
 
     It prints a JSON `update` block containing `"status": "InProgress"` and `"type": "ConfigUpdate"`. That means AWS accepted the change. If you get `ResourceInUseException`, an earlier update is still running: wait 1 minute and re-run the command.
 
-13. **Watch** the nodes join. New EC2 nodes take about **3–5 minutes** to boot and register. This command keeps running and prints a new line each time a node changes:
+14. **Watch** the nodes join. New EC2 nodes take about **3–5 minutes** to boot and register. This command keeps running and prints a new line each time a node changes:
 
     ```bash
     kubectl get nodes -w
@@ -238,7 +246,7 @@ On the board, `EKS pods schedulable` goes red within about two minutes of the ap
 
     The `orders-api-...` and `orders-worker-...` pods move `Pending → ContainerCreating → Running`, then reach `READY 1/1` about a minute later (the app installs its Python packages at startup). Once they all show `1/1   Running`, press **Ctrl+C**. `orders-conncheck-...` pods that end in `Error` (or sit `Running` for up to 2 minutes first) are expected; they cannot reach the internet to install their packages, and that is the second problem, which you will fix in Tasks 5–7.
 
-> **Expected Result:** Two nodes `Ready`; the `orders-api` and `orders-worker` pods `1/1 Running`. The **`EKS pods schedulable`** tile turns **green** within about a minute of step 12 (it reads the node group's desired size, so it can go green before the pods finish starting). The sold incident's first half is resolved — record the root cause (node group scaled to zero) in ServiceNow. If no node is `Ready` after 10 minutes, re-run step 10 and check that `desiredSize` is `2`.
+> **Expected Result:** Two nodes `Ready`; the `orders-api` and `orders-worker` pods `1/1 Running`. The **`EKS pods schedulable`** tile turns **green** within about a minute of step 13 (it reads the node group's desired size, so it can go green before the pods finish starting). The sold incident's first half is resolved — record the root cause (node group scaled to zero) in ServiceNow. If no node is `Ready` after 10 minutes, re-run step 11 and check that `desiredSize` is `2`.
 
 > **Why fix it with the EKS API instead of `terraform apply`?** Fixing capacity with the EKS API (or console) is the realistic Operations action — it is what an on-call engineer does to restore service immediately, and it is the action the board rewards. Your `update-nodegroup-config` fix holds for the rest of this lab. (Note: because the fault itself is expressed in Terraform as `scenario=lab2`, re-running `terraform apply` while still on `scenario=lab2` would re-inject the fault and scale the group back to zero — so don't re-apply until you move to the next lab/scenario.)
 
@@ -248,14 +256,14 @@ On the board, `EKS pods schedulable` goes red within about two minutes of the ap
 
 With pods running again, the `Pod → internet` and `Pod → DNS` tiles are still red. The in-cluster connectivity checker cannot reach the internet or resolve names — so it stops publishing and its tiles stay red.
 
-14. **Reproduce the egress block from a pod the policy applies to.** The default-deny
+15. **Reproduce the egress block from a pod the policy applies to.** The default-deny
     NetworkPolicy selects pods labelled `app.kubernetes.io/part-of: orders` — that includes the
     in-cluster **conncheck** probe whose blocked egress is exactly what turned the
     `Pod → internet` / `Pod → DNS` tiles red. Launch a throwaway pod carrying that label and
     test internet egress. (The `orders-api` app image is `python:3.12-slim` and ships no
     `curl`/`nslookup`, so use Python, which it does have.) The test connects to a public IP
     address (`1.1.1.1`, port 443) rather than a name, so a DNS failure cannot hide the result —
-    you test DNS separately in step 15.
+    you test DNS separately in step 16.
 
     ```bash
     kubectl -n orders run nettest --rm -i --restart=Never \
@@ -280,7 +288,7 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
     would reach the internet fine — proof that the block is scoped by the NetworkPolicy's pod
     selector.)
 
-15. **Test DNS** the same way — resolving a name is itself egress (to CoreDNS in `kube-system`),
+16. **Test DNS** the same way — resolving a name is itself egress (to CoreDNS in `kube-system`),
     so a blanket egress deny takes DNS out alongside the internet:
 
     ```bash
@@ -300,7 +308,7 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
 
 ## Task 7: Find the NetworkPolicy and the CNI Enforcement Beat
 
-16. **List** the NetworkPolicies in the namespace:
+17. **List** the NetworkPolicies in the namespace:
 
     ```bash
     kubectl -n orders get networkpolicy
@@ -310,7 +318,7 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
 
     The first command lists `orders-default-deny-egress`. You will find a **default-deny egress** policy: it selects the pods labelled `app.kubernetes.io/part-of: orders` and permits them no egress, so every outbound packet from those pods — internet *and* DNS — is dropped.
 
-17. **Confirm** that enforcement is actually on. A NetworkPolicy is inert unless the CNI enforces it. On EKS, the **VPC CNI must have NetworkPolicy enforcement enabled**, otherwise the AWS CNI silently ignores the policy:
+18. **Confirm** that enforcement is actually on. A NetworkPolicy is inert unless the CNI enforces it. On EKS, the **VPC CNI must have NetworkPolicy enforcement enabled**, otherwise the AWS CNI silently ignores the policy:
 
     ```bash
     aws eks describe-addon \
@@ -328,7 +336,7 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
 
 ## Task 8: Open the Required Egress and Confirm Green
 
-18. **Allow** the egress the pods need: DNS to `kube-system` (UDP/TCP 53) and outbound internet. Apply a targeted allow-egress NetworkPolicy alongside the default-deny (NetworkPolicies are additive — an allow anywhere permits the traffic):
+19. **Allow** the egress the pods need: DNS to `kube-system` (UDP/TCP 53) and outbound internet. Apply a targeted allow-egress NetworkPolicy alongside the default-deny (NetworkPolicies are additive — an allow anywhere permits the traffic):
 
     ```bash
     kubectl apply -f - <<'YAML'
@@ -363,7 +371,7 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
 
     > **Cleaner alternative:** because the default-deny was applied by the Helm chart, you can also re-deploy the application with the policy turned off. `./deploy_app.sh` always takes the policy setting from Terraform's `network_policy_default_deny` output (it accepts no `--set` options), so you would run `terraform apply -var scenario=healthy` and then `./deploy_app.sh`. Note that this also scales the node group from Terraform and restarts the rogue instance from Lab 1. The targeted allow above is the better *incident-response* habit (restore service with least change); the redeploy is the better *configuration* fix.
 
-19. **Re-test** from a policy-selected pod (same labelled throwaway pod as before). The first line clears any leftover test pod from an interrupted run:
+20. **Re-test** from a policy-selected pod (same labelled throwaway pod as before). The first line clears any leftover test pod from an interrupted run:
 
     ```bash
     kubectl -n orders delete pod nettest dnstest --ignore-not-found
@@ -376,7 +384,7 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
 
     After about 20–30 seconds it prints two lines: `dns` followed by an IP address (for example `dns 23.192.228.80`; the address varies), then `egress reachable`.
 
-> **Expected Result:** DNS resolves and the connection reports `egress reachable`. If it still fails, run `kubectl -n orders get networkpolicy` and check that `orders-allow-egress` is listed; if not, repeat step 18. Within 1–2 minutes the in-cluster checker publishes again and the **`Pod → internet`** and **`Pod → DNS`** tiles turn **green**. All three Lab 2 tiles are now green — close the P2 incident in ServiceNow with both root causes recorded: node group scaled to zero, and a default-deny egress NetworkPolicy with no allow rule.
+> **Expected Result:** DNS resolves and the connection reports `egress reachable`. If it still fails, run `kubectl -n orders get networkpolicy` and check that `orders-allow-egress` is listed; if not, repeat step 19. Within 1–2 minutes the in-cluster checker publishes again and the **`Pod → internet`** and **`Pod → DNS`** tiles turn **green**. All three Lab 2 tiles are now green — close the P2 incident in ServiceNow with both root causes recorded: node group scaled to zero, and a default-deny egress NetworkPolicy with no allow rule.
 
 ---
 
@@ -384,17 +392,17 @@ With pods running again, the `Pod → internet` and `Pod → DNS` tiles are stil
 
 ### `kubectl` says `Unauthorized` or `the server has asked for the client to provide credentials`
 
-**Fix:** Re-run Task 1, step 4. If it persists, you are not on your lab host as `ec2-user`, or Lab 1 Start Here step 6 did not finish: run `sudo su - ec2-user`, then repeat that step.
+**Fix:** Re-run Task 1, step 5. If it persists, you are not on your lab host as `ec2-user`, or Lab 1 Start Here step 7 did not finish: run `sudo su - ec2-user`, then repeat that step.
 
 ### No node reaches `Ready` after 10 minutes
 
-**Check:** Re-run step 10. `desiredSize` must be `2`. If it is still `0`, step 12 did not apply: re-run it and read its output for an error. Do **not** run `terraform apply -var scenario=lab2` to fix this; that re-injects the fault.
+**Check:** Re-run step 11. `desiredSize` must be `2`. If it is still `0`, step 13 did not apply: re-run it and read its output for an error. Do **not** run `terraform apply -var scenario=lab2` to fix this; that re-injects the fault.
 
 ### The `nettest` / `dnstest` pod stays `Pending` or the command hangs for minutes
 
 **Check:** `kubectl get nodes` must show nodes `Ready`; the test pods need somewhere to run. Finish Task 5 first. To clear a stuck test pod: `kubectl -n orders delete pod nettest dnstest --ignore-not-found`.
 
-### `Pod → internet` / `Pod → DNS` stay red after step 19
+### `Pod → internet` / `Pod → DNS` stay red after step 20
 
 **Fix:** The connectivity checker runs once a minute and must first install its packages, so allow 2–3 minutes and click the dashboard's refresh icon. Confirm `kubectl -n orders get networkpolicy` lists `orders-allow-egress`.
 
