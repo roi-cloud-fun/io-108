@@ -66,6 +66,8 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
     ```
 <!-- source: course_outline_v3.md §"using Terraform and verify its health" -->
 
+    Terraform ends the plan with `Note: You didn't use the -out option to save this plan...`. That note is normal after every `terraform plan`; ignore it.
+
     It takes about a minute and ends with a `Plan:` line. **Check it.** It should be small: about **`Plan: 0 to add, 2 to change, 0 to destroy.`** (2–3 to change, 0–1 to add or destroy). The resources listed above the `Plan:` line are `aws_lambda_function.report_generator` (reserved concurrency set to `0`) and `aws_cloudwatch_dashboard.incident_board` (the board's scenario label). You may also see `aws_ec2_instance_state.rogue[0]` destroyed (this only drops Terraform's record of the rogue's run state; the rogue stays as you left it), or the node group if you changed it outside Lab 2's steps.
 
     If it wants to add dozens or 100+ resources, **stop** and tell your instructor; do not run step 3. Terraform cannot see your stack.

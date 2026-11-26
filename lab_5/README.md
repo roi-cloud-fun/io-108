@@ -83,6 +83,8 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
 
     Expect about **2–4 to change, 0–2 to add, 0 to destroy**: `aws_route.capstone_misroute[0]` (the partner misroute), `aws_iam_role_policy.orders_api` (the IAM break) and `aws_cloudwatch_dashboard.incident_board`. Coming from Lab 4, it may also list `aws_ec2_instance_state.rogue[0]` or the `aurora_from_rogue` security-group rule. If it shows dozens or 100+ to add, or wants to destroy anything unexpected, stop and tell your instructor.
 
+    > **Two messages here are normal.** Coming from Lab 4, the plan starts with **`Warning: AWS resource not found during refresh`** for `aws_vpc_security_group_ingress_rule.aurora_from_rogue`. You deleted that rule in Lab 4, so Terraform plans to recreate it (`+ create`); the rogue is part of this capstone. The plan also ends with **`Note: You didn't use the -out option to save this plan...`**, which Terraform prints after every `terraform plan`. Neither is an error: check the `Plan:` line and continue.
+
 3. **Inject** the capstone incident. Run this command on its own:
 
     ```bash
