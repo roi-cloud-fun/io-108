@@ -99,7 +99,7 @@ By the end of this lab, you will:
 
 > **Expected Result:** Each tool prints a version line (`aws-cli/2...`, `Terraform v1...`, `Client Version: v1...`, `v4...`, `jq-1...`). `aws sts get-caller-identity` prints a short JSON block whose `Arn` contains `lab-host-role`. If any command prints `command not found` or an error, stop and tell your instructor.
 
-> **Reconnecting later?** Sessions time out when idle, and a new session forgets every shell variable except `SID`, `REGION` and `AWS_PAGER` (saved in step 2). Start a new session, run `sudo su - ec2-user`, then `cd ~/io-108/lab_environment/lab_env_student`. If you are in the middle of Task 2, re-run the `STATE_BUCKET=...` lines from step 4; if you are past Task 3, re-run the step 8 `export` block. Do not repeat step 2.
+> **Reconnecting later?** Sessions time out when idle, and a new session forgets every shell variable except `SID`, `REGION` and `AWS_PAGER` (saved in step 2). Start a new session, run `sudo su - ec2-user`, then `cd ~/io-108/lab_environment/lab_env_student`. If you are in the middle of Task 2, re-run the `STATE_BUCKET=...` lines from step 4; if you are past Task 3, re-run the step 9 `export` block. Do not repeat step 2.
 
 ---
 
@@ -148,14 +148,25 @@ By the end of this lab, you will:
 
     > **Expected Result:** `terraform init` ends with a green **`Terraform has been successfully initialized!`**. If it complains that the bucket is empty or missing (for example after a reconnect), re-run the first two lines of step 4, then this command.
 
-7. **Apply** the **healthy** baseline. The `scenario` variable selects which incident (if any) is injected; `healthy` is the green starting point. Run:
+7. **Preview** the build. This command changes nothing; it only shows the plan. Run it on its own:
+
+    ```bash
+    terraform plan -var scenario=healthy
+    ```
+
+    It takes about a minute and ends with a `Plan:` line. **Check it.** For a fresh build it reads about **`Plan: 126 to add, 0 to change, 0 to destroy.`** (the exact add count can differ by a few as the course is updated). The key check is **`0 to change, 0 to destroy`**.
+
+    - **If it matches,** go on to step 8.
+    - **If it shows anything to change or destroy, stop** and tell your instructor. A stack already exists in this state, and applying would modify it.
+
+8. **Apply** the **healthy** baseline. The `scenario` variable selects which incident (if any) is injected; `healthy` is the green starting point. Run:
 
     ```bash
     terraform apply -var scenario=healthy
     ```
     <!-- source: course_outline_v3.md §"Lab 0" -->
 
-    Terraform takes about a minute to compare the code with your (empty) state, then prints a **plan** (what it is about to build) and stops at a confirmation prompt:
+    Terraform prints the same plan again and stops at a confirmation prompt:
 
     ```
     Plan: 126 to add, 0 to change, 0 to destroy.
@@ -167,10 +178,8 @@ By the end of this lab, you will:
       Enter a value:
     ```
 
-    **Check the `Plan:` line first.** For a fresh build it reads about **126 to add, 0 to change, 0 to destroy** (the exact add count can differ by a few as the course is updated). The key check is **`0 to destroy`**:
-
-    - **If it matches,** type **`yes`** and press **Enter**. Terraform will not continue until you do, and anything other than `yes` cancels.
-    - **If it shows anything to change or destroy,** type **`no`** and press **Enter**, then tell your instructor. A stack already exists in this state and `yes` would modify it.
+    - **If the `Plan:` line matches your preview in step 7,** type **`yes`** and press **Enter**. Terraform will not continue until you do, and anything other than `yes` cancels.
+    - **If it differs,** type **`no`** and press **Enter**, then tell your instructor.
 
     This provisions your VPC (public/private subnets, NAT), the EKS cluster and managed node group, the Aurora cluster, the reporting Lambda and Step Functions workflow, the S3 report and sink buckets, the health-checker Lambda, the alarms, and **both** CloudWatch dashboards. EKS cluster creation is the long pole: the full apply typically takes **15–20 minutes**, printing `Still creating...` lines as it goes.
 
@@ -184,7 +193,7 @@ By the end of this lab, you will:
 
 ## Task 3: Capture Your Stack Outputs
 
-8. **Capture** the Terraform outputs you will reference in later labs. These are read straight from `terraform output`, so they always match your real resource names. Run them from the Terraform directory:
+9. **Capture** the Terraform outputs you will reference in later labs. These are read straight from `terraform output`, so they always match your real resource names. Run them from the Terraform directory:
 
     ```bash
     cd ~/io-108/lab_environment/lab_env_student
@@ -209,14 +218,14 @@ By the end of this lab, you will:
 
 ## Task 4: Deploy the Application onto EKS
 
-9. **Run** the deploy script from the same directory. It updates your kubeconfig (so `kubectl` talks to your cluster), copies the app code into the Helm chart, and installs the `orders` release into the `orders` namespace:
+10. **Run** the deploy script from the same directory. It updates your kubeconfig (so `kubectl` talks to your cluster), copies the app code into the Helm chart, and installs the `orders` release into the `orders` namespace:
 
     ```bash
     ./deploy_app.sh $SID $REGION
     ```
     <!-- source: course_outline_v3.md §"Lab 0" -->
 
-10. **Watch** the output. It takes about **3–5 minutes** and ends on its own; you do not need to press anything. Progress lines start with `==>`. The longest wait is `==> Waiting for orders-api rollout`: each app pod installs its dependencies at startup, and the script waits up to 5 minutes for them. It then runs an in-cluster smoke test against `/health`.
+11. **Watch** the output. It takes about **3–5 minutes** and ends on its own; you do not need to press anything. Progress lines start with `==>`. The longest wait is `==> Waiting for orders-api rollout`: each app pod installs its dependencies at startup, and the script waits up to 5 minutes for them. It then runs an in-cluster smoke test against `/health`.
 
 > **Expected Result:** The rollout wait prints `deployment "orders-api" successfully rolled out`. After `==> Smoke test: GET /health from inside the cluster` you see `{"database":"connected","status":"ok"}`, then `pod "curl-test" deleted`. The script finishes with `Deploy complete. Next steps:` and returns you to the `$` prompt.
 >
@@ -226,14 +235,14 @@ By the end of this lab, you will:
 
 ## Task 5: Verify the Baseline
 
-11. **Run** the verification script from the same directory. It checks every component of the stack and prints one `PASS:` or `FAIL:` line per check. It takes about **30–60 seconds**:
+12. **Run** the verification script from the same directory. It checks every component of the stack and prints one `PASS:` or `FAIL:` line per check. It takes about **30–60 seconds**:
 
     ```bash
     ./verify.sh
     ```
     <!-- source: course_outline_v3.md §"Lab 0" -->
 
-12. **Read** the results. The seven checks are, in order: all EKS nodes `Ready`, the `orders` pods healthy, `/health` reports `ok` (database connected), the Aurora cluster `available`, the latest Step Functions report execution `SUCCEEDED` or `RUNNING`, a report object present in S3, and the dashboard exists.
+13. **Read** the results. The seven checks are, in order: all EKS nodes `Ready`, the `orders` pods healthy, `/health` reports `ok` (database connected), the Aurora cluster `available`, the latest Step Functions report execution `SUCCEEDED` or `RUNNING`, a report object present in S3, and the dashboard exists.
 
 > **Expected Result:** Seven `PASS:` lines, ending with **`ALL CHECKS PASSED -- your stack is healthy. Capture this baseline for Lab 0.`**
 >
@@ -243,9 +252,9 @@ By the end of this lab, you will:
 
 ## Task 6: Open and Read Your Incident Board
 
-13. **Open** your board. In the AWS console, check that the region selector at the top right shows your assigned region. Type **CloudWatch** in the search bar at the top and open it. In the left menu choose **Dashboards**, then open **`io108-<your-id>-incident-board`** (for example `io108-user01-incident-board`). Do **not** open `io108-<your-id>-incident-dashboard`; that is a different dashboard. To see the latest state, click the refresh button (circular arrow) at the top right of the dashboard.
+14. **Open** your board. In the AWS console, check that the region selector at the top right shows your assigned region. Type **CloudWatch** in the search bar at the top and open it. In the left menu choose **Dashboards**, then open **`io108-<your-id>-incident-board`** (for example `io108-user01-incident-board`). Do **not** open `io108-<your-id>-incident-dashboard`; that is a different dashboard. To see the latest state, click the refresh button (circular arrow) at the top right of the dashboard.
 
-14. **Study** the layout. The board is organized into bands, one per lab, each a row of **alarm-status tiles**:
+15. **Study** the layout. The board is organized into bands, one per lab, each a row of **alarm-status tiles**:
 
     | Band | Tiles |
     |------|-------|
@@ -257,7 +266,7 @@ By the end of this lab, you will:
 
     Each tile is **green when its probe reports healthy** and **red when the probe reports broken** (or stops publishing). The probes run about every minute, so the board reflects reality with roughly a one-minute lag.
 
-15. **Note** which tiles are red *even in the healthy baseline*. These are the **security through-line** tiles:
+16. **Note** which tiles are red *even in the healthy baseline*. These are the **security through-line** tiles:
 
     - **`Rogue contained`** — RED, because the rogue instance is running and reachable. You contain it in **Lab 1**.
     - **`Aurora: no rogue sessions`** — RED, because the rogue holds a benign Postgres session open to Aurora. You lock it out in **Lab 4**.
