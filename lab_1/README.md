@@ -105,7 +105,7 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
     | Resource | Who changes it | When |
     |---|---|---|
     | EKS access entry (who may use `kubectl`) | Terraform | Step 7: moves cluster access to your lab host |
-    | `io108-<your-id>-orders-api-inline` (the orders API's IAM policy) | Terraform `scenario=lab1` breaks it; **you** repair it | Scenario, then Tasks 3–4 |
+    | `io108-<your-id>-orders-api-inline` (the orders API's IAM policy) | Terraform `scenario=lab1` breaks it; **you** repair it | Task 1, then Tasks 4–5 |
     | `orders-api` pods | **You** restart them | Task 5 |
     | `io108-<your-id>-rogue` EC2 instance | **You** stop it | Task 8 |
 
@@ -212,7 +212,7 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
 
 10. **Open** your incident board. In the AWS console search bar, type **CloudWatch** and open it. Check that the region selector at the top right matches your `REGION`. In the left menu choose **Dashboards**, then open **`io108-<your-id>-incident-board`** (for example `io108-user01-incident-board`; *not* the similarly named `...-incident-dashboard`).
 
-    > **Expected Result:** Every tile is **green** except two: **`Rogue contained`** and **`Aurora: no rogue sessions`**. Those two are red on purpose; you hunt the rogue later in this lab and in Lab 4. Tiles refresh about once a minute; click the refresh icon (circular arrow) at the top right to update them. If any other tile is red, wait 2 minutes, refresh, and tell your instructor if it stays red. Skim **Lab 0, Task 7** for what each tile means.
+    > **Expected Result:** Every tile is **green** except two: **`Rogue contained`** and **`Aurora: no rogue sessions`**. Those two are red on purpose; you hunt the rogue later in this lab and in Lab 4. Tiles refresh about once a minute; click the refresh icon (circular arrow) at the top right to update them. If any other tile is red, wait 2 minutes, refresh, and tell your instructor if it stays red. Skim **Lab 0, Task 6** for what each tile means.
 
 > **Reconnecting later?** Sessions time out when idle, and a new session forgets every shell variable except `SID` and `REGION` (saved in step 3). Start a new session, run `sudo su - ec2-user`, then re-run the **"Capture the values"** step of the lab you are on (in this lab, **step 15**). It changes to the right directory and restores everything that lab uses. Do not repeat steps 3–10.
 
@@ -512,7 +512,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     echo "Rogue host: $ROGUE_ID @ $ROGUE_IP"
     ```
 
-    You should see `Rogue role: arn:aws:iam::...:role/io108-<your-id>-rogue-actor` and `Rogue host: i-... @ 10.x.x.x`. If either is blank, re-run step 15. In a real investigation you would not have these as outputs. Tasks 5 and 6 show how you would *discover* them; keep these values to cross-check your findings.
+    You should see `Rogue role: arn:aws:iam::...:role/io108-<your-id>-rogue-actor` and `Rogue host: i-... @ 10.x.x.x`. If either is blank, re-run step 15. In a real investigation you would not have these as outputs. Tasks 6 and 7 show how you would *discover* them; keep these values to cross-check your findings.
 
 25. **Query CloudTrail** for who has been reading the Aurora master secret. Both the
     legitimate app roles and the rogue call `GetSecretValue`, and they all show up in the
