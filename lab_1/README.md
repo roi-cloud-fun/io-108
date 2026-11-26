@@ -497,7 +497,11 @@ Finish **Start Here** (steps 1–10) first. Inject this incident now, unless you
 
     The first command prints `deployment.apps/orders-api restarted`. The second waits while new pods start, one at a time (each installs its Python packages first), printing lines that start `Waiting for deployment "orders-api" rollout to finish:` followed by a progress message. This takes about 2–4 minutes. Do not press Ctrl+C.
 
-> **Expected Result:** `deployment "orders-api" successfully rolled out`. `kubectl -n orders get pods` shows both `orders-api` pods `1/1 Running`. Within a minute the **`orders-api DB access (IRSA)`** tile on the board turns **green** (refresh the dashboard); it may already be green, because the old pods recover as soon as IAM allows the read. If you instead see `error: timed out waiting for the condition`, run `kubectl -n orders get pods` and wait until both `orders-api` pods show `1/1 Running`. The P2 incident's first half is resolved: record the root cause (missing `secretsmanager:GetSecretValue` on the IRSA role) in your incident notes.
+    > **Expected Result:** `deployment "orders-api" successfully rolled out`. If you instead see `error: timed out waiting for the condition`, run `kubectl -n orders get pods` and wait until both `orders-api` pods show `1/1 Running`.
+
+24. **Confirm** on the board. Go back to your **`io108-<your-id>-incident-board`** tab and click the refresh icon (circular arrow) at the top right.
+
+    > **Expected Result:** **`orders-api DB access (IRSA)`** is **green** (it may already have turned green before the restart finished). The incident's first half is resolved: record the root cause, missing `secretsmanager:GetSecretValue` on the IRSA role, in your incident notes.
 
 ---
 
@@ -505,7 +509,7 @@ Finish **Start Here** (steps 1–10) first. Inject this incident now, unless you
 
 With service restored, turn to the intruder. Two tiles have been red since Lab 0: `Rogue contained` and `Aurora: no rogue sessions`. You close the first one here.
 
-24. **Display** the rogue's identifiers, which you captured from Terraform outputs in step 15:
+25. **Display** the rogue's identifiers, which you captured from Terraform outputs in step 15:
 
     ```bash
     echo "Rogue role: $ROGUE_ROLE"
@@ -514,7 +518,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
 
     You should see `Rogue role: arn:aws:iam::...:role/io108-<your-id>-rogue-actor` and `Rogue host: i-... @ 10.x.x.x`. If either is blank, re-run step 15. In a real investigation you would not have these as outputs. Tasks 6 and 7 show how you would *discover* them; keep these values to cross-check your findings.
 
-25. **Query CloudTrail** for who has been reading the Aurora master secret. Both the
+26. **Query CloudTrail** for who has been reading the Aurora master secret. Both the
     legitimate app roles and the rogue call `GetSecretValue`, and they all show up in the
     `Username` field as generic `botocore-session-...` assumed-role sessions — so you cannot
     tell them apart from that column. The real attribution lives one level deeper, in each
@@ -557,7 +561,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
 
 ## Task 7: What Did It Create? (AWS Config and Tag Search)
 
-26. **Enumerate** the rogue's footprint with **AWS Config**. Config records resource configuration and relationships over time, so you can ask "what resources carry the rogue marker?" without already knowing their ids. Use a Config advanced query (Config console → **Advanced queries**) or the CLI:
+27. **Enumerate** the rogue's footprint with **AWS Config**. Config records resource configuration and relationships over time, so you can ask "what resources carry the rogue marker?" without already knowing their ids. Use a Config advanced query (Config console → **Advanced queries**) or the CLI:
 
     ```bash
     aws configservice select-resource-config \
@@ -575,9 +579,9 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     AWS::EC2::Instance  i-...
     ```
 
-    The role's id is AWS's internal role id; the instance id matches `$ROGUE_ID`. If the command prints nothing, Config has not recorded the resources yet; go on to step 27, which does not depend on Config.
+    The role's id is AWS's internal role id; the instance id matches `$ROGUE_ID`. If the command prints nothing, Config has not recorded the resources yet; go on to step 28, which does not depend on Config.
 
-27. **Cross-check** with a direct tag search on EC2 — this finds the rogue **instance** even if Config is unavailable:
+28. **Cross-check** with a direct tag search on EC2 — this finds the rogue **instance** even if Config is unavailable:
 
     ```bash
     aws ec2 describe-instances \
@@ -596,7 +600,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
 
 ## Task 8: Contain the Rogue
 
-28. **Contain** the instance. The fastest containment that stops both its API activity and its database chatter is to **stop the instance**. (In a real incident you might first snapshot it for forensics; here, stopping is sufficient.)
+29. **Contain** the instance. The fastest containment that stops both its API activity and its database chatter is to **stop the instance**. (In a real incident you might first snapshot it for forensics; here, stopping is sufficient.)
 
     ```bash
     aws ec2 stop-instances --region $REGION --instance-ids "$ROGUE_ID"
@@ -608,7 +612,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
 
     > **Alternative containment (network isolation), for discussion:** instead of stopping the instance, you could quarantine it by replacing its security group `io108-<your-id>-rogue-sg` with an empty one (**EC2 → Instances** → select the instance → **Actions → Security → Change security groups**). The `Rogue contained` probe accepts either a stopped instance or the rogue security group removed. Deleting the `io108-<your-id>-aurora-from-rogue` ingress rule is a *database-side* fix covered in Lab 4; it does not turn this tile green.
 
-29. **Confirm** on the board. Go back to your `io108-<your-id>-incident-board` dashboard and click the refresh icon (circular arrow) at the top right.
+30. **Confirm** on the board. Go back to your `io108-<your-id>-incident-board` dashboard and click the refresh icon (circular arrow) at the top right.
 
 > **Expected Result:** Within a minute the **`Rogue contained`** tile turns **green**. Note that **`Aurora: no rogue sessions`** (the Lab 4 band) may also clear once the rogue's existing Postgres session ages out (allow up to 8 minutes) — but the *definitive* database-side lockout, using `pg_stat_activity` and the Aurora ingress rules, is the subject of **Lab 4**. For now, the instance is contained and the P2 incident is fully resolved. Close it in your incident notes with the timeline: access-denial root cause, restoration, and rogue containment.
 >
