@@ -287,16 +287,30 @@ The **Parallel** state sends the same input to every branch; each branch queues 
     echo "== SolarWinds sink =="; aws s3 ls "s3://$SINK_SW/" --recursive | tail -3
     ```
 
-    > **Expected Result:** Each listing ends with keys like `incidents/2026/11/25/143205-a1b2c3d4.json` (date, UTC time `HHMMSS`, random suffix). The newest key in each bucket should be your event.
+    > **Expected Result:** Each listing ends with keys like `incidents/2026/11/26/072144-78d8c3ab.json` (date, UTC time `HHMMSS`, random suffix). Each bucket's copy has its **own** random suffix, so the same event has a different key in each bucket. Some objects are the 2-minute heartbeat or the alarm event, not your test.
 
-22. **Read** the newest object in each bucket. Replace `<key>` with the last key from each listing in step 21:
+22. **Read** your test event from each bucket. This block reads the five newest objects in each sink and prints only the ones your step 20 test produced, so you do not have to copy keys by hand:
 
     ```bash
-    aws s3 cp "s3://$SINK_NR/<key>" -
-    aws s3 cp "s3://$SINK_SW/<key>" -
+    for B in "$SINK_NR" "$SINK_SW"; do
+      echo "== $B"
+      for K in $(aws s3api list-objects-v2 --bucket "$B" --prefix incidents/ \
+          --query 'reverse(sort_by(Contents,&LastModified))[:5].Key' --output text); do
+        aws s3 cp "s3://$B/$K" - | jq -c 'select(.event.source == "lab3-manual-test")'
+      done
+    done
     ```
 
-    > **Expected Result:** One line of JSON each. The `destination` is `newrelic` in one and `solarwinds` in the other, and **both** contain `"source": "lab3-manual-test"`. If you see `"source": "heartbeat"`, that is the 2-minute heartbeat: try the second-to-last key, or re-run step 20.
+    > **Expected Result:** One JSON line under each bucket name, the same event in both, differing only in `destination` and `forwarded_at`:
+    >
+    > ```
+    > == io108-user01-sink-newrelic-xxxxxx
+    > {"destination":"newrelic","forwarded_at":"2026-11-26T07:21:44.494604+00:00","event":{"source":"lab3-manual-test","incident":"report-pipeline"}}
+    > == io108-user01-sink-solarwinds-xxxxxx
+    > {"destination":"solarwinds","forwarded_at":"2026-11-26T07:21:44.494604+00:00","event":{"source":"lab3-manual-test","incident":"report-pipeline"}}
+    > ```
+    >
+    > If a bucket shows no line, the event has not arrived yet or more than five newer objects landed since: wait 15 seconds and run the block again, or re-run step 20. If you see `None` errors, `$SINK_NR` / `$SINK_SW` are blank: run steps 1 and 5 again.
 
 23. **Confirm** on the board. Go back to your **`io108-<your-id>-incident-board`** tab and click the refresh icon.
 
