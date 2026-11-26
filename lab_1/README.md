@@ -62,34 +62,71 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
     echo "export SID=$SID REGION=$REGION" >> ~/.bashrc
     ```
 
-4. **Connect** Terraform to your stack's remote state:
+4. **Point** Terraform at your stack. Your instructor already built your stack; Terraform keeps its record of what it built (the *state*) in a shared S3 bucket. These commands write your id and region into `terraform.tfvars`, then connect Terraform to your state file:
 
     ```bash
     cd ~/io-108/lab_environment/lab_env_student
     cp terraform.tfvars.example terraform.tfvars
     sed -i "s/^student_id.*/student_id = \"$SID\"/; s/^region.*/region = \"$REGION\"/" terraform.tfvars
+    grep -E '^(student_id|region)' terraform.tfvars
+    ```
+
+    **Verify** the `grep` output shows **your** id and region, for example:
+
+    ```
+    student_id = "user01"
+    region     = "us-east-1"
+    ```
+
+    If either line is wrong, go back to step 3. Then initialize Terraform (this downloads its plugins, about 30 seconds):
+
+    ```bash
     STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \
       --name /io108/tfstate-bucket --query Parameter.Value --output text)
+    echo "$STATE_BUCKET"
     terraform init -backend-config="bucket=$STATE_BUCKET" \
       -backend-config="key=io108/$SID/terraform.tfstate"
     ```
 
-5. **Apply** the healthy baseline. This gives your lab host access to the cluster and takes a minute or two:
+    > **Expected Result:** `echo` prints a bucket name starting with `io108-tfstate-`, and `terraform init` ends with a green **`Terraform has been successfully initialized!`**. If `echo` prints nothing, stop and tell your instructor.
+
+5. **Apply** the healthy baseline. This grants your lab host access to your EKS cluster. Run:
 
     ```bash
     terraform apply -var scenario=healthy
     ```
 
-    Expect a small plan of about **2 to add, 2 to destroy** (the `aws_eks_access_*` resources). Type **yes**. **If it wants to create 100+ resources, answer no and tell your instructor:** your id, region or state key is wrong.
+    Terraform takes about a minute to compare your stack with the code, then prints a **plan** (what it is about to change) and stops at a confirmation prompt:
 
-6. **Set up** `kubectl` and **verify** the baseline:
+    ```
+    Plan: 2 to add, 0 to change, 2 to destroy.
+
+    Do you want to perform these actions?
+      Terraform will perform the actions described above.
+      Only 'yes' will be accepted to approve.
+
+      Enter a value:
+    ```
+
+    **Check the `Plan:` line first.** It should be about **2 to add, 2 to destroy** (the two `aws_eks_access_*` resources that grant cluster access):
+
+    - **If it matches,** type **`yes`** and press **Enter**. Terraform will not continue until you do, and anything other than `yes` cancels.
+    - **If it wants to add 100 or more resources,** type **`no`** and press **Enter**, then tell your instructor. Your id, region or state key is wrong, and `yes` would try to build a second copy of the whole stack.
+
+    > **Expected Result:** After about a minute, Terraform prints **`Apply complete! Resources: 2 added, 0 changed, 2 destroyed.`** followed by a list of outputs. You are returned to the `$` prompt.
+
+6. **Connect** `kubectl` to your cluster, then **verify** the baseline:
 
     ```bash
     aws eks update-kubeconfig --name "$(terraform output -raw cluster_name)" --region $REGION
     ./verify.sh
     ```
 
-> **Expected Result:** `ALL CHECKS PASSED`. In **CloudWatch → Dashboards → `io108-<your-id>-incident-board`** (your assigned region), every tile is green **except** `Rogue contained` and `Aurora: no rogue sessions`. Those two are red on purpose. Skim **Lab 0, Task 6** for what each tile means.
+    `update-kubeconfig` prints one line, `Added new context arn:aws:eks:...:cluster/io108-<your-id>-eks to /home/ec2-user/.kube/config`. `verify.sh` then runs seven checks, printing `PASS:` or `FAIL:` for each. It takes about 30 seconds.
+
+> **Expected Result:** Seven `PASS:` lines (EKS nodes, orders pods, orders-api `/health`, Aurora, report workflow, report in S3, dashboard), ending with **`ALL CHECKS PASSED -- your stack is healthy.`** Then open the **CloudWatch console** in your assigned region, choose **Dashboards**, and open **`io108-<your-id>-incident-board`**. Every tile is green **except** `Rogue contained` and `Aurora: no rogue sessions`. Those two are red on purpose. Skim **Lab 0, Task 6** for what each tile means.
+>
+> **Troubleshooting:** If `verify.sh` shows `FAIL:` for the report workflow or the report in S3, wait 5 minutes and run `./verify.sh` again; reports are produced every 5 minutes. If the EKS nodes, pods or `/health` checks fail with `Unauthorized` or `the server has asked for the client to provide credentials`, step 5 did not finish. Re-run step 5 and make sure you typed `yes`.
 
 > **Reconnecting later?** Sessions time out when idle. Start a new session, run `sudo su - ec2-user`, then `cd ~/io-108/lab_environment/lab_env_student`, and re-run the variable block near the top of the lab you are on. You do not need to repeat steps 3–6.
 
