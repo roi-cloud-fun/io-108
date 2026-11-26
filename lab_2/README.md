@@ -103,6 +103,7 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
 5. **Capture** the values this lab uses into shell variables. **After any reconnect, run steps 1 and 5 again**, because a new session forgets these variables:
 
     ```bash
+    cd ~/io-108/lab_environment/lab_env_student
     export CLUSTER=$(terraform output -raw cluster_name)
     echo "CLUSTER=$CLUSTER"
     aws eks update-kubeconfig --name "$CLUSTER" --region $REGION
@@ -229,14 +230,21 @@ On the board, `EKS pods schedulable` goes red within about two minutes of the ap
 
     It prints a JSON `update` block containing `"status": "InProgress"` and `"type": "ConfigUpdate"`. That means AWS accepted the change. If you get `ResourceInUseException`, an earlier update is still running: wait 1 minute and re-run the command.
 
-14. **Watch** the nodes join. New EC2 nodes take about **3–5 minutes** to boot and register. This command keeps running and prints a new line each time a node changes:
+14. **Watch** the nodes join. New EC2 nodes take about **5–8 minutes** to boot, register and become `Ready`. This command watches the nodes. It **never stops on its own**: it keeps running and prints a new line each time a node changes, so you stop it yourself:
 
     ```bash
     kubectl get nodes -w
     ```
 <!-- source: Lab_2_narrative.md §"kubectl get nodes" -->
 
-    At first it may print `No resources found` and then nothing for a while; that is normal. Once **two** lines show `STATUS` **`Ready`**, press **Ctrl+C** to stop watching and get your `$` prompt back.
+    At first it may print `No resources found` and then nothing for several minutes; that is normal. Nodes may also appear first as `NotReady` and then print again as `Ready`. You are waiting for **two** different node names whose `STATUS` is **`Ready`**, like this (names and ages differ):
+
+    ```
+    ip-10-42-131-130.ec2.internal   Ready    <none>   5m26s   v1.37.1-eks-9adbfea
+    ip-10-42-157-86.ec2.internal    Ready    <none>   5m27s   v1.37.1-eks-9adbfea
+    ```
+
+    As soon as you see two `Ready` nodes, press **Ctrl+C** to stop watching and get your `$` prompt back. The watch will not end by itself. To double-check, run `kubectl get nodes` (without `-w`): it prints the current list once and exits.
 
     Then watch the pods schedule:
 
@@ -244,7 +252,15 @@ On the board, `EKS pods schedulable` goes red within about two minutes of the ap
     kubectl -n orders get pods -w
     ```
 
-    The `orders-api-...` and `orders-worker-...` pods move `Pending → ContainerCreating → Running`, then reach `READY 1/1` about a minute later (the app installs its Python packages at startup). Once they all show `1/1   Running`, press **Ctrl+C**. `orders-conncheck-...` pods that end in `Error` (or sit `Running` for up to 2 minutes first) are expected; they cannot reach the internet to install their packages, and that is the second problem, which you will fix in Tasks 5–7.
+    This also **never stops on its own**. The `orders-api-...` and `orders-worker-...` pods move `Pending → ContainerCreating → Running`, then reach `READY 1/1` about a minute later (the app installs its Python packages at startup). You are waiting for lines like these (names differ):
+
+    ```
+    orders-api-667cd8dc5c-d6q8c       1/1     Running   0          2m
+    orders-api-667cd8dc5c-d9xk2       1/1     Running   0          2m
+    orders-worker-765f947b85-2gcd8    1/1     Running   0          2m
+    ```
+
+    Once both `orders-api` pods and the `orders-worker` pod show `1/1   Running`, press **Ctrl+C**. To double-check, run `kubectl -n orders get pods` (without `-w`). `orders-conncheck-...` pods that end in `Error` (or sit `Running` for up to 2 minutes first) are expected; they cannot reach the internet to install their packages, and that is the second problem, which you will fix in Tasks 6–8.
 
 > **Expected Result:** Two nodes `Ready`; the `orders-api` and `orders-worker` pods `1/1 Running`. The **`EKS pods schedulable`** tile turns **green** within about a minute of step 13 (it reads the node group's desired size, so it can go green before the pods finish starting). The sold incident's first half is resolved — record the root cause (node group scaled to zero) in ServiceNow. If no node is `Ready` after 10 minutes, re-run step 11 and check that `desiredSize` is `2`.
 

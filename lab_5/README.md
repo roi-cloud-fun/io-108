@@ -124,6 +124,7 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
 5. **Capture** the values this lab uses into shell variables. **After any reconnect, run steps 1 and 5 again**, because a new session forgets these variables:
 
     ```bash
+    cd ~/io-108/lab_environment/lab_env_student
     STUDENT_ID=$SID
     export VPC_ID=$(aws ec2 describe-vpcs --region "$REGION" --filters "Name=tag:Name,Values=io108-${STUDENT_ID}-vpc" --query 'Vpcs[0].VpcId' --output text)
     export IRSA_ROLE="io108-${STUDENT_ID}-orders-api-role"   # role NAME (Lab 1 used the ARN)

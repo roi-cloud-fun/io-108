@@ -113,6 +113,7 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
 5. **Capture** the values this lab uses into shell variables. **After any reconnect, run steps 1 and 5 again**, because a new session forgets these variables:
 
     ```bash
+    cd ~/io-108/lab_environment/lab_env_student
     STUDENT_ID=$SID
     export WRITER=$(terraform output -raw aurora_cluster_endpoint)
     export READER=$(terraform output -raw aurora_reader_endpoint)
