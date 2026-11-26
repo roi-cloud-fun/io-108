@@ -160,6 +160,8 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
     - **If it shows any other numbers,** type **`no`** and press **Enter**, then tell your instructor. In particular, **dozens or 100+ "to add" means Terraform cannot see your stack**, and `yes` would build a second copy of it.
 
     > **Expected Result:** After about a minute, Terraform prints **`Apply complete! Resources: 2 added, 0 changed, 2 destroyed.`** followed by a list of outputs. You are returned to the `$` prompt.
+    >
+    > If instead Terraform prints **`No changes. Your infrastructure matches the configuration.`** and `Apply complete! Resources: 0 added, 0 changed, 0 destroyed.` without asking for `yes`, your lab host already has cluster access (for example, you ran this step before). That is fine; continue.
 
 7. **Connect** `kubectl` to your cluster, then **verify** it can reach the cluster:
 
@@ -192,7 +194,7 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
 
     It runs seven checks and prints `PASS:` or `FAIL:` for each.
 
-    > **Expected Result:** Seven `PASS:` lines (EKS nodes, orders pods, orders-api `/health`, Aurora, report workflow, report in S3, dashboard), ending with **`ALL CHECKS PASSED -- your stack is healthy.`**
+    > **Expected Result:** Seven `PASS:` lines (EKS nodes, orders pods, orders-api `/health`, Aurora, report workflow, report in S3, dashboard), ending with a line that starts **`ALL CHECKS PASSED -- your stack is healthy.`**
     >
     > **Troubleshooting:** If `verify.sh` shows `FAIL:` only for the report workflow or the report in S3, wait 5 minutes and run `./verify.sh` again; reports are produced every 5 minutes. If the `orders pods` and `/health` checks fail, run `kubectl -n orders get pods`: **`No resources found in orders namespace`** means the application was never installed on your stack (Lab 0's `deploy_app.sh` step). Tell your instructor; do not start the Scenario until it is installed. For any other `FAIL:`, tell your instructor.
 
@@ -218,7 +220,7 @@ terraform apply -var scenario=lab1
 ```
 <!-- source: course_outline_v3.md §"Lab 1: IAM Access Denial Investigation" -->
 
-Terraform takes about a minute, then prints the plan and stops at `Enter a value:`, as in Start Here step 6. **Check the `Plan:` line.** It must read **`Plan: 0 to add, 2 to change, 0 to destroy.`**, and the two resources marked `~ update in-place` are:
+Terraform takes 15–60 seconds, then prints the plan and stops at `Enter a value:`, as in Start Here step 6. **Check the `Plan:` line.** It must read **`Plan: 0 to add, 2 to change, 0 to destroy.`**, and the two resources marked `~ update in-place` are:
 
 - `aws_iam_role_policy.orders_api`: the orders API's IAM policy, which is the fault
 - `aws_cloudwatch_dashboard.incident_board`: the board header, which shows the active scenario
@@ -281,14 +283,14 @@ By the end of this lab, you will:
     You will see output like this (names and ages differ):
 
     ```
-    NAME                             READY   STATUS      RESTARTS   AGE
-    orders-api-6d9f7c8b5-abcde       0/1     Running     1          3m
-    orders-api-6d9f7c8b5-fghij       0/1     Running     1          3m
-    orders-conncheck-xxxxx           0/1     Completed   0          40m
-    orders-worker-5c7d9b6f4-klmno    1/1     Running     0          40m
+    NAME                              READY   STATUS      RESTARTS   AGE
+    orders-api-65d98c7b59-bw4f6       1/1     Running     0          11h
+    orders-api-65d98c7b59-lvqf8       1/1     Running     0          11h
+    orders-conncheck-29927910-zk2st   0/1     Completed   0          45s
+    orders-worker-765f947b85-5qx2g    1/1     Running     0          13h
     ```
 
-    Only the `orders-api` rows matter. They are `Running` but failing their readiness probe (the app starts, but `/health` returns an error because it cannot reach the database), so `READY` shows `0/1`. After 1–2 minutes they may also restart or show `CrashLoopBackOff`. `Completed` conncheck pods are normal and can be ignored.
+    Only the `orders-api` rows matter. **They most likely still look healthy (`1/1 Running`, 0 restarts).** The failure is intermittent at first: some `/health` checks still succeed, so Kubernetes has not marked the pods unready. The pod table does not show this fault, which is a lesson in itself: the evidence is in the logs (next step). If the pods were restarted after the fault began, or the incident has run longer, you may instead see `0/1`, restarts, or `CrashLoopBackOff`. `Completed` conncheck pods are normal and can be ignored.
 
 13. **Tail** the logs of an `orders-api` pod:
 
@@ -298,15 +300,18 @@ By the end of this lab, you will:
     ```
 <!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
 
-14. **Find** the error. The application tries to read the Aurora master credentials from Secrets Manager at startup and on each `/health` check. In a running pod it appears as one long line starting `ERROR health check failed:`; after a restart you may instead see a Python traceback ending in `botocore.exceptions.ClientError:`. Both are the same error. If you see only `pip` install output, re-run the `logs` command with `--previous` added. The error reads (wrapped here for width):
+14. **Find** the error. The application tries to read the Aurora master credentials from Secrets Manager at startup and on each `/health` check. Most log lines are web requests such as `"GET /health HTTP/1.1" 200 -`, and you will see `503` responses mixed in with the `200`s. Look for a line containing **`ERROR health check failed:`**. It is one long line (wrapped here for width):
 
     ```
-    botocore.exceptions.ClientError: An error occurred (AccessDeniedException)
-    when calling the GetSecretValue operation: User:
-    arn:aws:sts::<account>:assumed-role/io108-userNN-orders-api-role/<session>
-    is not authorized to perform: secretsmanager:GetSecretValue on resource: <secret-arn>
-    because no identity-based policy allows the secretsmanager:GetSecretValue action
+    2026-11-26 06:29:14,322 ERROR health check failed: An error occurred
+    (AccessDeniedException) when calling the GetSecretValue operation: User:
+    arn:aws:sts::<account>:assumed-role/io108-<your-id>-orders-api-role/botocore-session-<n>
+    is not authorized to perform: secretsmanager:GetSecretValue on resource:
+    arn:aws:secretsmanager:...:secret:rds!cluster-... because no identity-based policy
+    allows the secretsmanager:GetSecretValue action
     ```
+
+    If no `ERROR` line appears yet, wait a minute and run the `logs` command again (the first error can take a minute or more after the fault is injected). If the pod has restarted, you may instead see a Python traceback ending in `botocore.exceptions.ClientError:` with the same message; add `--previous` to the `logs` command to see the run before the restart.
 
 > **Expected Result:** You can name the **denied action** (`secretsmanager:GetSecretValue`), the **principal** (the assumed `io108-$SID-orders-api-role`), and the **resource** (the Aurora master secret). The error explicitly says *no identity-based policy allows the action* — this is a permissions problem, not a network or credential-rotation problem.
 
@@ -456,9 +461,9 @@ By the end of this lab, you will:
     ```
 <!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
 
-    The first command prints `deployment.apps/orders-api restarted`. The second waits while new pods start, one at a time (each installs its Python packages first), printing `Waiting for deployment "orders-api" rollout to finish...` lines. This takes about 2–4 minutes. Do not press Ctrl+C.
+    The first command prints `deployment.apps/orders-api restarted`. The second waits while new pods start, one at a time (each installs its Python packages first), printing lines that start `Waiting for deployment "orders-api" rollout to finish:` followed by a progress message. This takes about 2–4 minutes. Do not press Ctrl+C.
 
-> **Expected Result:** `deployment "orders-api" successfully rolled out`. `kubectl -n orders get pods` shows both `orders-api` pods `1/1 Running`. Within a minute the **`orders-api DB access (IRSA)`** tile on the board turns **green** (refresh the dashboard). If you instead see `error: timed out waiting for the condition`, run `kubectl -n orders get pods` and wait until both `orders-api` pods show `1/1 Running`. The P2 incident's first half is resolved: record the root cause (missing `secretsmanager:GetSecretValue` on the IRSA role) in your incident notes.
+> **Expected Result:** `deployment "orders-api" successfully rolled out`. `kubectl -n orders get pods` shows both `orders-api` pods `1/1 Running`. Within a minute the **`orders-api DB access (IRSA)`** tile on the board turns **green** (refresh the dashboard); it may already be green, because the old pods recover as soon as IAM allows the read. If you instead see `error: timed out waiting for the condition`, run `kubectl -n orders get pods` and wait until both `orders-api` pods show `1/1 Running`. The P2 incident's first half is resolved: record the root cause (missing `secretsmanager:GetSecretValue` on the IRSA role) in your incident notes.
 
 ---
 
@@ -488,28 +493,29 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     aws cloudtrail lookup-events \
       --region $REGION \
       --lookup-attributes AttributeKey=ResourceName,AttributeValue="$SECRET_ARN" \
-      --max-items 400 \
+      --start-time "$(date -u -d '-60 min' +%FT%TZ)" \
+      --max-items 3000 \
       --query 'Events[].CloudTrailEvent' --output json \
     | jq -r '.[] | fromjson | .userIdentity.sessionContext.sessionIssuer.userName' \
     | sort | uniq -c | sort -rn
     ```
     <!-- source: Module_2_narrative.md §"CloudTrail Event Structure" -->
 
-    This takes 10–20 seconds. The output is a tally: the number is how many reads that role made, and the name is the role. For example:
+    This covers the last hour and takes 10–60 seconds. The output is a tally: the number is how many reads that role made, and the name is the role. For example:
 
     ```
-        310 io108-user01-health-checker-role
-        120 io108-user01-orders-api-role
-         24 io108-user01-report-lambda-role
-          5 io108-user01-rogue-actor
+       1250 io108-user01-orders-api-role
+        190 io108-user01-health-checker-role
+         15 io108-user01-rogue-actor
+         12 io108-user01-report-lambda-role
     ```
 
-    Your numbers will differ. A `null` line, if any, can be ignored. If `rogue-actor` is missing, wait 5 minutes and run the command again (CloudTrail lags up to 15 minutes).
+    Your numbers will differ: the orders API and health checker read the secret constantly, the report Lambda only a few times an hour. A `null` line, if any, can be ignored. If `rogue-actor` is missing, wait 5 minutes and run the command again (CloudTrail lags up to 15 minutes).
 
-> **Expected Result:** The role tally includes **`io108-$SID-rogue-actor`** reading the Aurora
-> master secret — an identity that should never touch it. The legitimate app roles read it
-> constantly (every few seconds), so the rogue's reads are a low-frequency minority in the
-> list (it re-reads roughly every few minutes); the *identity*, not the volume, is the tell.
+> **Expected Result:** The role tally includes **`io108-<your-id>-rogue-actor`** reading the Aurora
+> master secret — an identity that should never touch it. The orders API and health checker
+> read it constantly, so the rogue's reads are a low-frequency minority in the list (it
+> re-reads every few minutes); the *identity*, not the volume, is the tell.
 > This is your evidence that a second, unauthorized principal is using stolen credentials
 > against your database.
 
@@ -522,11 +528,20 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     ```bash
     aws configservice select-resource-config \
       --region $REGION \
-      --expression "SELECT resourceId, resourceType, tags WHERE tags.tag = 'Rogue=true' AND tags.tag = 'Student=$SID'"
+      --expression "SELECT resourceId, resourceType, tags WHERE tags.tag = 'Rogue=true' AND tags.tag = 'Student=$SID'" \
+      --query 'Results' --output json \
+    | jq -r '.[] | fromjson | "\(.resourceType)  \(.resourceId)"'
     ```
     <!-- source: facts_extracted_v2.md §"AWS Config for Change Correlation" -->
 
-    The output is JSON. Each entry in `Results` is one resource; look for `"resourceType":"AWS::EC2::Instance"` and `"AWS::IAM::Role"`. If the output shows `"Results": []`, Config has not recorded the resources yet; go on to step 23, which does not depend on Config.
+    You should see two lines, one per resource carrying the rogue marker:
+
+    ```
+    AWS::IAM::Role  AROA...
+    AWS::EC2::Instance  i-...
+    ```
+
+    The role's id is AWS's internal role id; the instance id matches `$ROGUE_ID`. If the command prints nothing, Config has not recorded the resources yet; go on to step 23, which does not depend on Config.
 
 23. **Cross-check** with a direct tag search on EC2 — this finds the rogue **instance** even if Config is unavailable:
 
@@ -555,7 +570,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     ```
     <!-- source: Module_2_narrative.md §"CloudTrail Audit and Rogue Resources" -->
 
-    `stop-instances` prints JSON showing `"Name": "stopping"`. `wait` then prints nothing for 1–2 minutes and returns to the `$` prompt once the instance is stopped. Do not press Ctrl+C. If it prints `Waiter InstanceStopped failed` or `Invalid id`, run `echo $ROGUE_ID`; if that is blank, re-run step 11, then this step.
+    `stop-instances` prints JSON showing `"Name": "stopping"`. `wait` then prints nothing for up to 2 minutes (often under 30 seconds) and returns to the `$` prompt once the instance is stopped. Do not press Ctrl+C. If it prints `Waiter InstanceStopped failed` or `Invalid id`, run `echo $ROGUE_ID`; if that is blank, re-run step 11, then this step.
 
     > **Alternative containment (network isolation), for discussion:** instead of stopping the instance, you could quarantine it by replacing its security group `io108-<your-id>-rogue-sg` with an empty one (**EC2 → Instances** → select the instance → **Actions → Security → Change security groups**). The `Rogue contained` probe accepts either a stopped instance or the rogue security group removed. Deleting the `io108-<your-id>-aurora-from-rogue` ingress rule is a *database-side* fix covered in Lab 4; it does not turn this tile green.
 
