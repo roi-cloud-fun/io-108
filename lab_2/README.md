@@ -68,7 +68,7 @@ By the end of this lab, you will:
 2. **Re-establish** your shell context:
 
     ```bash
-    export SID=sNN
+    export SID=userNN
     export REGION=us-east-1       # <- CHANGE to YOUR assigned region (e.g. us-east-2, eu-west-1)    
     export CLUSTER=$(terraform output -raw cluster_name)
     aws eks update-kubeconfig --name "$CLUSTER" --region $REGION

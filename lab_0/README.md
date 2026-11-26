@@ -54,10 +54,10 @@ By the end of this lab, you will:
    > **Windows Git Bash only:** also run `export MSYS_NO_PATHCONV=1`, or names such as
    > `/io108/tfstate-bucket` get rewritten into Windows paths and lookups fail with `ParameterNotFound`.
 
-2. **Set** two shell variables you will reuse all day. Replace `sNN` with the student id your instructor assigned (for example `s07`):
+2. **Set** two shell variables you will reuse all day. Replace `userNN` with the student id your instructor assigned (for example `user07`):
 
     ```bash
-    export SID=sNN                # your assigned student id, e.g. s01
+    export SID=userNN             # your assigned student id, e.g. user01
     export REGION=us-east-1       # YOUR assigned region, e.g. us-east-2 / eu-west-1 -- change this
     ```
 
@@ -92,7 +92,7 @@ By the end of this lab, you will:
     ```bash
     cp terraform.tfvars.example terraform.tfvars
     # edit terraform.tfvars:
-    #   student_id = "sNN"          <- your id
+    #   student_id = "userNN"       <- your id
     #   region     = "us-east-2"    <- YOUR assigned region
     ```
 

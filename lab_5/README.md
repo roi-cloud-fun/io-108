@@ -62,7 +62,7 @@ By the end of this lab, you will be able to:
 
 Run from a local clone or AWS CloudShell.
 
-1. **Materialize the capstone incident** (replace `s01` with your assigned id):
+1. **Materialize the capstone incident** (replace `user01` with your assigned id):
 
     ```bash
     cd lab_environment/lab_env_student

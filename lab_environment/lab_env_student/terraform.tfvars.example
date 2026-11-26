@@ -1,7 +1,7 @@
 # IO-108 Troubleshooting -- per-student variables.
 # Copy to terraform.tfvars and set your assigned student id.
 
-student_id = "s01"
+student_id = "user01"
 region     = "us-east-1"
 
 # Defaults below rarely need changing in class:

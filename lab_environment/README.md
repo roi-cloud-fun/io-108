@@ -77,15 +77,15 @@ cd lab_env_student
 STATE_BUCKET=$(aws ssm get-parameter --region us-east-1 \
   --name /io108/tfstate-bucket --query Parameter.Value --output text)
 terraform init -backend-config="bucket=$STATE_BUCKET" \
-  -backend-config="key=io108/s01/terraform.tfstate"
-terraform apply -var student_id=s01        # ~20-25 min (EKS + Aurora dominate)
+  -backend-config="key=io108/user01/terraform.tfstate"
+terraform apply -var student_id=user01        # ~20-25 min (EKS + Aurora dominate)
 ./deploy_app.sh                             # kubeconfig + helm + smoke test
 ./verify.sh                                 # Lab 0: PASS/FAIL on every component
 ```
 
 Notes:
 
-- `student_id` is lowercase alphanumeric, 2-12 chars (s01 … s08).
+- `student_id` is lowercase alphanumeric, 2-12 chars (user01 … user50).
 - The Lambda package directory `lab_env_student/app/lambda_build/` is
   **committed** (pg8000 + deps vendored, plus `report_generator.py`). Do not
   delete it — `terraform apply` zips it as-is; students never run pip.
@@ -100,7 +100,7 @@ Notes:
 ```bash
 cd lab_env_student
 helm uninstall orders -n orders             # FIRST: releases in-cluster resources
-terraform destroy -var student_id=s01
+terraform destroy -var student_id=user01
 ```
 
 Uninstall the Helm release before `terraform destroy`. Anything the cluster

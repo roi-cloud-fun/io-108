@@ -42,7 +42,7 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
 3. **Set** your student id and region, and save them so they survive a reconnect:
 
     ```bash
-    export SID=sNN                # <- your assigned student id, e.g. s01
+    export SID=userNN             # <- your assigned student id, e.g. user01
     export REGION=us-east-1       # <- your assigned region
     echo "export SID=$SID REGION=$REGION" >> ~/.bashrc
     ```
@@ -120,7 +120,7 @@ By the end of this lab, you will:
 2. **Re-establish** your shell variables if you opened a new terminal:
 
     ```bash
-    export SID=sNN
+    export SID=userNN
     export REGION=us-east-1       # <- CHANGE to YOUR assigned region (e.g. us-east-2, eu-west-1)
     export IRSA_ROLE=$(terraform output -raw irsa_role_arn)
     export SECRET_ARN=$(terraform output -raw aurora_master_secret_arn)
@@ -157,7 +157,7 @@ By the end of this lab, you will:
     ```
     botocore.exceptions.ClientError: An error occurred (AccessDeniedException)
     when calling the GetSecretValue operation: User:
-    arn:aws:sts::<account>:assumed-role/io108-sNN-orders-api-role/<session>
+    arn:aws:sts::<account>:assumed-role/io108-userNN-orders-api-role/<session>
     is not authorized to perform: secretsmanager:GetSecretValue on resource: <secret-arn>
     because no identity-based policy allows the secretsmanager:GetSecretValue action
     ```

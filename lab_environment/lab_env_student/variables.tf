@@ -3,7 +3,7 @@
 ###############################################################################
 
 variable "student_id" {
-  description = "Short student identifier (e.g. s01). Lowercase alphanumeric, 2-12 chars. Prefixes every named resource."
+  description = "Short student identifier (e.g. user01). Lowercase alphanumeric, 2-12 chars. Prefixes every named resource."
   type        = string
 
   validation {

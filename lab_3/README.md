@@ -54,7 +54,7 @@ By the end of this lab, you will be able to:
 
 Run from a local clone or AWS CloudShell — **not** a Google Drive/OneDrive synced folder.
 
-1. **Materialize this lab's incident.** From the lab environment directory, apply the `lab3` scenario (replace `s01` with your assigned student id):
+1. **Materialize this lab's incident.** From the lab environment directory, apply the `lab3` scenario (replace `user01` with your assigned student id):
 
     ```bash
     cd lab_environment/lab_env_student
