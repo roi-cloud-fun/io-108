@@ -33,11 +33,16 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
 
 1. **Connect.** In the AWS console, open **Systems Manager → Session Manager → Start session**, in the region your instructor gives you for the hosts. Select **`io108-<your-id>-lab-host`** and choose **Start session**.
 
+    A terminal opens in your browser with a bare `sh-5.2$` prompt. This is the lab host.
+
 2. **Switch** to the user that owns the lab files. Do this every time you connect:
 
     ```bash
     sudo su - ec2-user
+    whoami
     ```
+
+    `whoami` must print **`ec2-user`**. If it prints `ssm-user`, run `sudo su - ec2-user` again.
 
 3. **Set** your student id and region, verify them, then save them so they survive a reconnect.
 
@@ -174,22 +179,28 @@ Your instructor has already built your stack (Lab 0) and given you a student id,
 
 ## Scenario
 
-It is mid-morning. A monitoring alert fires and your **`orders-api DB access (IRSA)`** tile on the incident board has gone **red**. The order-processing API is returning errors and the scheduled reports have stopped landing in S3. No deployment went out; nothing changed in the application code.
+It is mid-morning. A monitoring alert fires and your **`orders-api DB access (IRSA)`** tile on the incident board has gone **red**. The order-processing API is returning errors and cannot reach its database. No deployment went out; nothing changed in the application code.
 
 You open a **P2** incident in **ServiceNow** — the service is degraded but there is no data loss and no customer-facing outage yet. Your job: find why the API lost access, restore it, and then — because Operations has been carrying two known-red security tiles since the environment was built — finally run down the rogue principal that has been quietly talking to your database.
 
-**To inject this incident** (instructor-led, or self-serve), re-apply your stack in the `lab1` scenario:
+**Inject this incident now**, unless your instructor tells you they already did. Finish **Start Here** (steps 1–7) first. Then re-apply your stack in the `lab1` scenario:
 
 ```bash
 cd ~/io-108/lab_environment/lab_env_student
-terraform plan  -var scenario=lab1     # student_id + region come from your terraform.tfvars (Lab 0)
 terraform apply -var scenario=lab1
 ```
 <!-- source: course_outline_v3.md §"Lab 1: IAM Access Denial Investigation" -->
 
-> **New machine or fresh clone?** Do **Start Here** (steps 3–7) first. If your clone is not at `~/io-108`, adjust the `cd` path.
+Terraform takes about a minute, then prints the plan and stops at `Enter a value:`, as in Start Here step 6. **Check the `Plan:` line.** It must read **`Plan: 0 to add, 2 to change, 0 to destroy.`**, and the two resources marked `~ update in-place` are:
 
-This swaps the `orders-api` IRSA role's policy for one that is **missing** the Aurora-secret read and the S3 object permissions. Within a minute the board tile goes red.
+- `aws_iam_role_policy.orders_api`: the orders API's IAM policy, which is the fault
+- `aws_cloudwatch_dashboard.incident_board`: the board header, which shows the active scenario
+
+If it matches, type **`yes`** and press **Enter**. If it shows anything to add or destroy, type **`no`**, press **Enter**, and tell your instructor.
+
+> **Expected Result:** After a few seconds, **`Apply complete! Resources: 0 added, 2 changed, 0 destroyed.`** Within 1–2 minutes the `orders-api DB access (IRSA)` tile goes red.
+
+This swaps the `orders-api` IRSA role's policy for one that is **missing** the Aurora-secret read and the S3 object permissions.
 
 ---
 
@@ -287,20 +298,25 @@ By the end of this lab, you will:
     ```
     <!-- source: facts_extracted_v2.md §"Common IAM Issues" -->
 
-    In the broken state the policy contains a single, harmless `s3:ListBucket` statement on the reports bucket — and **nothing else**. The `secretsmanager:GetSecretValue` permission and the S3 object (`PutObject`/`GetObject`) permissions are gone.
+    The output is JSON. Look under `PolicyDocument` → `Statement`. In the broken state it contains a single, harmless `s3:ListBucket` statement on the reports bucket — and **nothing else**. The `secretsmanager:GetSecretValue` permission and the S3 object (`PutObject`/`GetObject`) permissions are gone.
 
 7. **Prove** the denial with the IAM policy simulator rather than guessing. Simulate the role against the exact action and resource from the log:
 
     ```bash
     aws iam simulate-principal-policy \
-      --policy-source-arn arn:aws:iam::$(aws sts get-caller-identity --query Account --output text):role/io108-$SID-orders-api-role \
+      --policy-source-arn "$IRSA_ROLE" \
       --action-names secretsmanager:GetSecretValue \
       --resource-arns "$SECRET_ARN" \
+      --query 'EvaluationResults[0].EvalDecision' --output text
+    aws iam simulate-principal-policy \
+      --policy-source-arn "$IRSA_ROLE" \
+      --action-names s3:PutObject \
+      --resource-arns "arn:aws:s3:::$REPORTS_BUCKET/*" \
       --query 'EvaluationResults[0].EvalDecision' --output text
     ```
 <!-- source: facts_extracted_v2.md §"IAM Policy Simulator" -->
 
-> **Expected Result:** The simulator returns **`implicitDeny`** — the action is denied because no statement allows it. Re-running the simulation for `s3:PutObject` against `$REPORTS_BUCKET/*` also returns `implicitDeny`. You have now confirmed the root cause without touching the running app: the role's policy was stripped of the permissions the workload needs.
+> **Expected Result:** Each command prints one word, **`implicitDeny`** — the action is denied because no statement allows it. If you get `Invalid ARN` or a blank value error, re-run Task 1, step 2. You have now confirmed the root cause without touching the running app: the role's policy was stripped of the permissions the workload needs.
 
 > **IAM evaluation, briefly.** A request is allowed only if an `Allow` matches and no `Deny` overrides it. With the permission simply absent, the request falls through to the default **implicit deny**. There is no explicit `Deny` here to hunt for — the fix is to *add back* the missing `Allow`, not to remove a block.
 
@@ -308,10 +324,16 @@ By the end of this lab, you will:
 
 ## Task 4: Restore Access and Confirm Green
 
-8. **Restore** the role's permissions to the healthy policy — full S3 object access on the reports bucket plus `secretsmanager:GetSecretValue` on the Aurora secret. Put the corrected inline policy back:
+8. **Restore** the role's permissions to the healthy policy — full S3 object access on the reports bucket plus `secretsmanager:GetSecretValue` on the Aurora secret. First **verify** the two values the policy is built from:
 
     ```bash
-    ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+    echo "bucket=$REPORTS_BUCKET"
+    echo "secret=$SECRET_ARN"
+    ```
+
+    Both must show a value (the secret starts with `arn:aws:secretsmanager:`). If either is blank, re-run Task 1, step 2. Then put the corrected inline policy back:
+
+    ```bash
     REPORTS_ARN="arn:aws:s3:::$REPORTS_BUCKET"
 
     aws iam put-role-policy \
@@ -336,28 +358,32 @@ By the end of this lab, you will:
     ```
 <!-- source: Lab_1_narrative.md §"Phase 5: Remediate and Validate" -->
 
+    > **Expected Result:** The command returns to the `$` prompt with **no output**. That is success. Any line starting `An error occurred` (for example `MalformedPolicyDocument`) means it failed: re-check the two `echo` values and run it again.
+
 9. **Re-simulate** to confirm the fix at the IAM layer before touching the app:
 
     ```bash
     aws iam simulate-principal-policy \
-      --policy-source-arn arn:aws:iam::$ACCOUNT:role/io108-$SID-orders-api-role \
+      --policy-source-arn "$IRSA_ROLE" \
       --action-names secretsmanager:GetSecretValue \
       --resource-arns "$SECRET_ARN" \
       --query 'EvaluationResults[0].EvalDecision' --output text
     ```
     <!-- source: facts_extracted_v2.md §"IAM Policy Simulator" -->
 
-    This now returns **`allowed`**.
+    This now returns **`allowed`**. If it still says `implicitDeny`, wait 15 seconds (IAM changes take a moment to spread) and run it again.
 
 10. **Restart** the `orders-api` pods so they re-attempt the secret read with the restored permission (IRSA credentials are assumed at runtime; a fresh attempt picks up the new policy immediately):
 
     ```bash
     kubectl -n orders rollout restart deploy/orders-api
-    kubectl -n orders rollout status deploy/orders-api --timeout=180s
+    kubectl -n orders rollout status deploy/orders-api --timeout=300s
     ```
 <!-- source: facts_extracted_v2.md §"kubectl Debugging Commands" -->
 
-> **Expected Result:** Pods reach `READY 1/1`. Within a minute the **`orders-api DB access (IRSA)`** tile on the board turns **green**. The P2 incident's first half is resolved — record the root cause (missing `secretsmanager:GetSecretValue` on the IRSA role) in ServiceNow.
+    The first command prints `deployment.apps/orders-api restarted`. The second waits while new pods start, one at a time (each installs its Python packages first), printing `Waiting for deployment "orders-api" rollout to finish...` lines. This takes about 2–4 minutes. Do not press Ctrl+C.
+
+> **Expected Result:** `deployment "orders-api" successfully rolled out`. `kubectl -n orders get pods` shows both `orders-api` pods `1/1 Running`. Within a minute the **`orders-api DB access (IRSA)`** tile on the board turns **green** (refresh the dashboard). If you instead see `error: timed out waiting for the condition`, run `kubectl -n orders get pods` and wait until both `orders-api` pods show `1/1 Running`. The P2 incident's first half is resolved: record the root cause (missing `secretsmanager:GetSecretValue` on the IRSA role) in your incident notes.
 
 ---
 
@@ -365,17 +391,14 @@ By the end of this lab, you will:
 
 With service restored, turn to the intruder. Two tiles have been red since Lab 0: `Rogue contained` and `Aurora: no rogue sessions`. You close the first one here.
 
-11. **Identify** the rogue's IAM principal. Your stack tags it for discoverability. Find the role tagged `Rogue=true`:
+11. **Display** the rogue's identifiers, which you captured from Terraform outputs in Task 1, step 2:
 
     ```bash
-    export ROGUE_ROLE=$(terraform output -raw rogue_actor_role_arn)
-    export ROGUE_ID=$(terraform output -raw rogue_instance_id)
-    export ROGUE_IP=$(terraform output -raw rogue_private_ip)
     echo "Rogue role: $ROGUE_ROLE"
     echo "Rogue host: $ROGUE_ID @ $ROGUE_IP"
     ```
 
-    In a real investigation you would not have these as outputs — Task 6 shows how you would *discover* them. Capture them now so you can cross-check your findings.
+    You should see `Rogue role: arn:aws:iam::...:role/io108-<your-id>-rogue-actor` and `Rogue host: i-... @ 10.x.x.x`. If either is blank, re-run Task 1, step 2. In a real investigation you would not have these as outputs. Tasks 5 and 6 show how you would *discover* them; keep these values to cross-check your findings.
 
 12. **Query CloudTrail** for who has been reading the Aurora master secret. Both the
     legitimate app roles and the rogue call `GetSecretValue`, and they all show up in the
@@ -396,6 +419,17 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     | sort | uniq -c | sort -rn
     ```
     <!-- source: Module_2_narrative.md §"CloudTrail Event Structure" -->
+
+    This takes 10–20 seconds. The output is a tally: the number is how many reads that role made, and the name is the role. For example:
+
+    ```
+        310 io108-user01-health-checker-role
+        120 io108-user01-orders-api-role
+         24 io108-user01-report-lambda-role
+          5 io108-user01-rogue-actor
+    ```
+
+    Your numbers will differ. A `null` line, if any, can be ignored. If `rogue-actor` is missing, wait 5 minutes and run the command again (CloudTrail lags up to 15 minutes).
 
     Among the expected app roles (`io108-$SID-orders-api-role`, `-health-checker-role`,
     `-report-lambda-role`) you will find **`io108-$SID-rogue-actor`** — a principal that has
@@ -422,7 +456,7 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     ```
     <!-- source: facts_extracted_v2.md §"AWS Config for Change Correlation" -->
 
-    > **Instructor note:** AWS Config requires an account-level configuration recorder, which lives in the shared lab stack (one recorder per account/region). If this query returns nothing, confirm the shared recorder is enabled; fall back to the EC2 tag search in step 14.
+    The output is JSON. Each entry in `Results` is one resource; look for `"resourceType":"AWS::EC2::Instance"` and `"AWS::IAM::Role"`. If the output shows `"Results": []`, Config has not recorded the resources yet; go on to step 14, which does not depend on Config.
 
 14. **Cross-check** with a direct tag search on EC2 — this finds the rogue **instance** even if Config is unavailable:
 
@@ -434,6 +468,8 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
       --output table
     ```
 <!-- source: Module_2_narrative.md §"CloudTrail Audit and Rogue Resources" -->
+
+    You should see a small table with one row: the instance `Id` (`i-...`), its private `Ip`, and `State` `running`.
 
 > **Expected Result:** You independently arrive at the same instance id and private IP you captured in Task 5 (`$ROGUE_ID` / `$ROGUE_IP`), plus the tagged `rogue-actor` role. You have now answered both investigative questions: **who** (CloudTrail → rogue-actor principal) and **what** (Config / tag search → the rogue EC2 instance and its IAM role).
 
@@ -449,11 +485,15 @@ With service restored, turn to the intruder. Two tiles have been red since Lab 0
     ```
     <!-- source: Module_2_narrative.md §"CloudTrail Audit and Rogue Resources" -->
 
-    **Alternative containment (network isolation):** instead of stopping it, detach its egress path by removing the rogue's access to Aurora. Swap the instance off the rogue security group, or delete the standalone ingress rule that lets the rogue reach Aurora on 5432 (`io108-$SID-aurora-from-rogue`). Either approach severs the connection the `Rogue contained` probe watches.
+    `stop-instances` prints JSON showing `"Name": "stopping"`. `wait` then prints nothing for 1–2 minutes and returns to the `$` prompt once the instance is stopped. Do not press Ctrl+C. If it prints `Waiter InstanceStopped failed` or `Invalid id`, run `echo $ROGUE_ID`; if that is blank, re-run Task 1, step 2, then this step.
 
-16. **Confirm** on the board.
+    > **Alternative containment (network isolation), for discussion:** instead of stopping the instance, you could quarantine it by replacing its security group `io108-<your-id>-rogue-sg` with an empty one (**EC2 → Instances** → select the instance → **Actions → Security → Change security groups**). The `Rogue contained` probe accepts either a stopped instance or the rogue security group removed. Deleting the `io108-<your-id>-aurora-from-rogue` ingress rule is a *database-side* fix covered in Lab 4; it does not turn this tile green.
 
-> **Expected Result:** Within a minute the **`Rogue contained`** tile turns **green**. Note that **`Aurora: no rogue sessions`** (the Lab 4 band) may also clear once the rogue's existing Postgres session ages out (allow up to 8 minutes) — but the *definitive* database-side lockout, using `pg_stat_activity` and the Aurora ingress rules, is the subject of **Lab 4**. For now, the instance is contained and the P2 incident is fully resolved. Close it in ServiceNow with the timeline: access-denial root cause, restoration, and rogue containment.
+16. **Confirm** on the board. Go back to your `io108-<your-id>-incident-board` dashboard and click the refresh icon (circular arrow) at the top right.
+
+> **Expected Result:** Within a minute the **`Rogue contained`** tile turns **green**. Note that **`Aurora: no rogue sessions`** (the Lab 4 band) may also clear once the rogue's existing Postgres session ages out (allow up to 8 minutes) — but the *definitive* database-side lockout, using `pg_stat_activity` and the Aurora ingress rules, is the subject of **Lab 4**. For now, the instance is contained and the P2 incident is fully resolved. Close it in your incident notes with the timeline: access-denial root cause, restoration, and rogue containment.
+>
+> **Note:** Any later `terraform apply` with `scenario=healthy` or `lab1` starts the rogue again (it is part of the stack). That is expected; Lab 4 deals with it for good.
 
 ---
 
@@ -479,14 +519,14 @@ You worked a **P2** access-denial incident from the board tile to root cause and
 
 ## Completion Checklist
 
-- [ ] `orders-api DB access (IRSA)` tile confirmed red (incident logged as P2 in ServiceNow)
+- [ ] `orders-api DB access (IRSA)` tile confirmed red (incident recorded as P2)
 - [ ] `AccessDenied` on `secretsmanager:GetSecretValue` found in `orders-api` pod logs
 - [ ] Root cause confirmed: role policy missing the secret read and S3 object permissions (`simulate-principal-policy` → `implicitDeny`)
 - [ ] Healthy policy restored with `put-role-policy`; re-simulation returns `allowed`
 - [ ] `orders-api` restarted; `orders-api DB access (IRSA)` tile green
 - [ ] CloudTrail activity attributed to the `rogue-actor` principal
 - [ ] Rogue EC2 instance enumerated via AWS Config / tag search
-- [ ] Rogue contained (stopped or network-isolated); `Rogue contained` tile green
+- [ ] Rogue contained (instance stopped); `Rogue contained` tile green
 
 ---
 
