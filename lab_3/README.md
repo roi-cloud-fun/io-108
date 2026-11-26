@@ -264,19 +264,9 @@ Run every command in this lab on your **lab host** as **`ec2-user`** (Session Ma
 
 When the report pipeline failed, a CloudWatch alarm (`$FANOUT_ALARM`, on the report workflow's failed executions) fanned the incident out to every monitoring tool SYF uses: **one event, many destinations.**
 
-```
-CloudWatch Alarm (report failed) ---\
-                                      >--> EventBridge rule
-EventBridge heartbeat (every 2 min) -/         |
-                                               v
-                    Step Functions state machine -- Parallel state
-                       |-- branch "newrelic"   --> SQS queue --\
-                       |-- branch "solarwinds" --> SQS queue --- > forwarder Lambda
-                                                               --> writes the SAME event
-                                                                   to BOTH S3 sink buckets
-```
+![Lab 3 event fan-out: a failed report run raises a CloudWatch alarm; an EventBridge rule (or the 2-minute heartbeat) starts the fan-out state machine; its Parallel state sends one SQS message per destination; a forwarder Lambda writes each message to that destination's S3 sink bucket.](images/fanout.png)
 
-The **Parallel** state sends the same input to every branch; each branch queues it on SQS; a forwarder Lambda writes it to each destination's S3 sink. A 2-minute heartbeat keeps the sinks green while healthy.
+The **Parallel** state sends the same input to every branch; each branch queues it on its own SQS queue; one forwarder Lambda writes each message to that destination's S3 sink bucket. A 2-minute heartbeat keeps the sinks green while healthy.
 
 > **Note:** The two sink buckets (`$SINK_NR`, `$SINK_SW`) stand in for the real NewRelic and SolarWinds ingestion endpoints, so you can inspect the event directly.
 
