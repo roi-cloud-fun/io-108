@@ -169,7 +169,10 @@ resource "aws_s3_bucket_policy" "config" {
 resource "aws_iam_role" "config" {
   count = var.enable_config ? 1 : 0
 
-  name = "io108-config-recorder-role"
+  # IAM names are global: suffix the region outside us-east-1 so a second
+  # region's recorder (e.g. us-east-2) can coexist. us-east-1 keeps the
+  # original name so its existing role is not replaced.
+  name = var.region == "us-east-1" ? "io108-config-recorder-role" : "io108-config-recorder-role-${var.region}"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
